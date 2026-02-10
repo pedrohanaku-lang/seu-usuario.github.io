@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Samurai Roguelike Melhorado</title>
+<title>Samurai Roguelike Drag Sword</title>
 <style>
 body{margin:0;background:#111;display:flex;justify-content:center;align-items:center;height:100vh;color:#0f0;font-family:Arial, sans-serif;}
 canvas{background:#222;border:3px solid #0f0;display:none;position:absolute;z-index:1;}
 #menu,#creditos,#cartas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#000;border:2px solid #0f0;padding:25px;text-align:center;z-index:10;}
-#cartas{display:none;gap:15px;}
+#cartas{display:none;gap:15px;flex-wrap:wrap;}
 .cartao{width:160px;border:2px solid #0f0;padding:15px;background:#111;cursor:pointer;}
 .cartao:hover{background:#0f0;color:#000;}
 button{padding:12px 28px;font-size:18px;cursor:pointer;margin:10px;border:none;background:#0f0;color:#000;}
@@ -46,6 +46,9 @@ let doubleShot=false, swordRange=80, swordCooldown=0, shootCooldown=0;
 let phase="wave"; 
 let weapon="gun"; 
 let swordHits=0;
+
+// Espada drag
+let swordDrag={active:false,path:[],length:80,damage:1,destroyBulletChance:0.3};
 
 // Barra ultimate
 let specialBar=0;
@@ -101,10 +104,11 @@ canvas.addEventListener("mousemove",e=>{
     mouse.y = e.clientY - r.top;
 });
 canvas.addEventListener("mousedown",e=>{
-    if(e.button===2&&gameActive){
-        if(weapon==="gun") shoot();
-        else sword();
-    }
+    if(e.button===2 && gameActive && weapon==="sword") swordDrag.active=true;
+    if(e.button===2 && gameActive && weapon==="gun") shoot();
+});
+canvas.addEventListener("mouseup",e=>{
+    if(e.button===2) swordDrag.active=false;
 });
 
 // ---------------- CLASSES ----------------
@@ -129,75 +133,59 @@ function drawPlayer(){
     ctx.fillRect(player.x+25,player.y+10,5,5);
 }
 
-// ---------------- ESPADA ----------------
-let swordAttack = { active:false, x:0, y:0, tx:0, ty:0, length:80, damage:1, destroyBulletChance:0.3 };
+// ---------------- ESPADA DRAG ----------------
+function updateSwordDrag(){
+    if(!swordDrag.active) return;
+    // adiciona posição atual do mouse ao path
+    swordDrag.path.push({x:mouse.x,y:mouse.y});
+    // limita o comprimento do path
+    if(swordDrag.path.length>30) swordDrag.path.shift();
 
-function sword(){
-    if(swordCooldown>0) return;
-    swordCooldown=15;
-    swordHits++;
-    swordAttack.active=true;
-    swordAttack.x=player.x+PLAYER_SIZE/2;
-    swordAttack.y=player.y+PLAYER_SIZE/2;
-    swordAttack.tx=mouse.x;
-    swordAttack.ty=mouse.y;
+    // verifica colisão com inimigos
+    enemies.forEach((e,i)=>{
+        swordDrag.path.forEach(p=>{
+            let closestX = Math.max(e.x, Math.min(p.x, e.x+e.w));
+            let closestY = Math.max(e.y, Math.min(p.y, e.y+e.h));
+            let dx = closestX-p.x;
+            let dy = closestY-p.y;
+            if(Math.hypot(dx,dy)<swordDrag.length){
+                hitEnemy(i);
+                specialBar=Math.min(maxSpecial,specialBar+0.1);
+            }
+        });
+    });
 
-    // destrói balas e carrega ultimate
+    // destrói balas inimigas
     for(let i=enemyBullets.length-1;i>=0;i--){
-        let b=enemyBullets[i];
-        let d=Math.hypot(b.x-swordAttack.x,b.y-swordAttack.y);
-        if(d<swordAttack.length && Math.random()<swordAttack.destroyBulletChance){
-            enemyBullets.splice(i,1);
-            specialBar=Math.min(maxSpecial,specialBar+1);
-        }
-    }
-
-    // dano em inimigos
-    for(let i=enemies.length-1;i>=0;i--){
-        let e=enemies[i];
-        // NPC normal: distância até centro
-        if(!e.isBoss){
-            let dx=(e.x+e.w/2)-swordAttack.x;
-            let dy=(e.y+e.h/2)-swordAttack.y;
-            if(Math.hypot(dx,dy)<swordAttack.length){
-                hitEnemy(i);
-                specialBar=Math.min(maxSpecial,specialBar+1);
+        swordDrag.path.forEach(p=>{
+            let b=enemyBullets[i];
+            if(Math.hypot(b.x-p.x,b.y-p.y)<swordDrag.length && Math.random()<swordDrag.destroyBulletChance){
+                enemyBullets.splice(i,1);
+                specialBar=Math.min(maxSpecial,specialBar+0.2);
             }
-        } else {
-            // Boss: hitbox completa
-            let closestX=Math.max(e.x,Math.min(swordAttack.tx,e.x+e.w));
-            let closestY=Math.max(e.y,Math.min(swordAttack.ty,e.y+e.h));
-            let dx=closestX-swordAttack.x;
-            let dy=closestY-swordAttack.y;
-            if(Math.hypot(dx,dy)<swordAttack.length){
-                hitEnemy(i);
-                specialBar=Math.min(maxSpecial,specialBar+1);
-            }
-        }
+        });
     }
 }
 
-function drawSword(){
-    if(!swordAttack.active) return;
+function drawSwordDrag(){
+    if(swordDrag.path.length<2) return;
     ctx.strokeStyle="#ff0";
     ctx.lineWidth=4;
-    let dx=swordAttack.tx-swordAttack.x;
-    let dy=swordAttack.ty-swordAttack.y;
-    let dist=Math.hypot(dx,dy);
-    let ex=swordAttack.x + dx/dist * swordRange;
-    let ey=swordAttack.y + dy/dist * swordRange;
     ctx.beginPath();
-    ctx.moveTo(swordAttack.x,swordAttack.y);
-    ctx.lineTo(ex,ey);
+    ctx.moveTo(swordDrag.path[0].x,swordDrag.path[0].y);
+    for(let i=1;i<swordDrag.path.length;i++){
+        ctx.lineTo(swordDrag.path[i].x,swordDrag.path[i].y);
+    }
     ctx.stroke();
-    swordAttack.active=false;
 }
 
 // ---------------- ULTIMATE ----------------
 function activateUltimate(){
+    // dano em todos inimigos
     for(let i=enemies.length-1;i>=0;i--) hitEnemy(i);
-    enemyBullets=[];
+    enemyBullets=[]; // destrói todas as balas
     specialBar=0;
+    // efeito visual
     ctx.strokeStyle="#ff0";
     ctx.lineWidth=12;
     ctx.beginPath();
@@ -221,7 +209,7 @@ function fireBullet(){
 function spawnEnemy(type="normal"){
     let enemy={x:Math.random()*(W-28),y:Math.random()*(H-28),w:28,h:28,
                vx:Math.random()*1.5-0.75,vy:Math.random()*1.5-0.75,
-               shootTimer:0, shootInterval:type==="normal"?100:0,
+               shootTimer:0, shootInterval:type==="normal"?100:50,
                hp:type==="normal"?3:5,type:type};
     enemies.push(enemy);
 }
@@ -236,7 +224,10 @@ function spawnBoss(){
 
 function spawnWave(){
     phase="wave";
-    for(let i=0;i<2+stage;i++) spawnEnemy("normal");
+    for(let i=0;i<2+stage;i++){
+        let t=Math.random()<0.5?"normal":"shooter";
+        spawnEnemy(t);
+    }
 }
 
 // ---------------- HIT / KILL ----------------
@@ -266,15 +257,16 @@ function showShop(){
     const pool=[
         {t:"+1 vida máxima", f:()=>{maxLives++; lives++;}},
         {t:"Tiro duplo", f:()=>{doubleShot=true;}},
-        {t:"Espada maior", f:()=>{swordRange+=40;}},
+        {t:"Espada maior", f:()=>{swordDrag.length+=40;}},
         {t:"Velocidade +", f:()=>{player.speed+=1;}},
-        {t:"Reduz cooldown espada", f:()=>{swordCooldown=Math.max(5,swordCooldown-5);}}
+        {t:"Reduz cooldown espada", f:()=>{swordCooldown=Math.max(5,swordCooldown-5);}},
+        {t:"NPC aliado que atira", f:()=>{spawnCustomNPC();}}
     ];
     shuffle(pool);
     for(let i=0;i<3;i++){
         let c=document.createElement("div");
         c.className="cartao"; c.textContent=pool[i].t;
-        c.onclick=()=>{ pool[i].f(); div.style.display="none"; showingCards=false; gameActive=true; spawnBoss(); };
+        c.onclick=()=>{ pool[i].f(); div.style.display="none"; showingCards=false; spawnBoss(); gameActive=true; };
         div.appendChild(c);
     }
 }
@@ -287,7 +279,7 @@ function update(){
     if(!gameActive) return;
     if(shootCooldown>0) shootCooldown--;
     if(swordCooldown>0) swordCooldown--;
-    if((keys[" "]||keys["space"])&&weapon==="sword"&&swordCooldown===0) sword();
+    if((keys[" "]||keys["space"])&&weapon==="sword") swordDrag.active=true;
 
     if(keys["w"]||keys["arrowup"]) player.y-=player.speed;
     if(keys["s"]||keys["arrowdown"]) player.y+=player.speed;
@@ -295,6 +287,8 @@ function update(){
     if(keys["d"]||keys["arrowright"]) player.x+=player.speed;
     player.x=Math.max(0,Math.min(W-PLAYER_SIZE,player.x));
     player.y=Math.max(0,Math.min(H-PLAYER_SIZE,player.y));
+
+    updateSwordDrag();
 
     enemies.forEach(e=>{
         e.x+=e.vx; e.y+=e.vy;
@@ -310,7 +304,7 @@ function update(){
             }
         }
 
-        // boss atira em padrões
+        // boss atira em padrão circular
         if(e.isBoss){
             e.patternTimer=(e.patternTimer||0)+1;
             if(e.patternTimer%50===0){
@@ -334,9 +328,16 @@ function shootEnemy(e){
     enemyBullets.push(new Bullet(e.x+e.w/2,e.y+e.h/2,tx,ty,4,"#4af"));
 }
 
+function spawnCustomNPC(){
+    // NPC aliado que atira em inimigos automaticamente
+    let npc={x:player.x+50,y:player.y, w:28,h:28, vx:0, vy:0, shootTimer:0, shootInterval:30, hp:10, type:"ally"};
+    enemies.push(npc);
+}
+
 function updateBullets(arr,isPlayer){
     for(let i=arr.length-1;i>=0;i--){
-        let b=arr[i]; b.update();
+        let b=arr[i];
+        b.update();
         if(b.off()){arr.splice(i,1); continue;}
         if(!isPlayer){
             let d=Math.hypot(b.x-(player.x+PLAYER_SIZE/2),b.y-(player.y+PLAYER_SIZE/2));
@@ -344,6 +345,7 @@ function updateBullets(arr,isPlayer){
         } else{
             for(let j=enemies.length-1;j>=0;j--){
                 let e=enemies[j];
+                if(e.type==="ally") continue;
                 let dx=(e.x+e.w/2)-b.x;
                 let dy=(e.y+e.h/2)-b.y;
                 if(Math.hypot(dx,dy)<18){ arr.splice(i,1); hitEnemy(j); break; }
@@ -358,10 +360,10 @@ function gameOver(){gameActive=false; gameOverFlag=true;}
 function draw(){
     ctx.clearRect(0,0,W,H);
     drawPlayer();
-    drawSword();
+    drawSwordDrag();
 
     enemies.forEach(e=>{
-        ctx.fillStyle=e.isBoss?"#600":e.type==="dasher"?"#f33":"#f0f";
+        ctx.fillStyle=e.isBoss?"#600":(e.type==="ally"?"#0ff":"#f0f");
         ctx.fillRect(e.x,e.y,e.w,e.h);
         if(e.isBoss){
             let bw=e.w*(e.hp/e.maxHp);
