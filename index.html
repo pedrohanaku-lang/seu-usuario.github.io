@@ -19,7 +19,7 @@ button{padding:12px 28px;font-size:18px;cursor:pointer;margin:10px;border:none;b
 
 <div id="menu">
     <h1>SAMURAI ROGUELIKE</h1>
-    <button id="playBtn">JOGAR</button><br>
+    <button onclick="startGame()">JOGAR</button><br>
     <button onclick="showCredits()">CRÉDITOS</button>
 </div>
 
@@ -35,8 +35,8 @@ button{padding:12px 28px;font-size:18px;cursor:pointer;margin:10px;border:none;b
 <script>
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
-const W = 800, H = 600;
-const PLAYER_SIZE = 40;
+const W=800,H=600;
+const PLAYER_SIZE=40;
 
 let player, enemies, playerBullets, enemyBullets;
 let keys={}, mouse={x:400,y:300};
@@ -44,26 +44,11 @@ let gameActive=false, showingCards=false, gameOverFlag=false;
 let stage=1, score=0, kills=0;
 let maxLives=5, lives=5;
 let doubleShot=false, swordRange=80, swordCooldown=0, shootCooldown=0;
-let phase="wave"; // wave|boss|cards
-let weapon="gun"; // gun|sword
+let phase="wave"; 
+let weapon="gun"; 
 let swordHits=0;
 
-// ---------------- IMAGEM DO JOGADOR ----------------
-let playerSprite = new Image();
-playerSprite.src = "/mnt/data/74a8608a-763c-4911-a29f-928666039c26.png";
-let playerSpriteLoaded = false;
-playerSprite.onload = () => { playerSpriteLoaded = true; };
-
 // ---------------- MENU ----------------
-const playBtn = document.getElementById("playBtn");
-playBtn.onclick = () => {
-    if(!playerSpriteLoaded){
-        alert("A imagem do jogador ainda não carregou. Aguarde alguns segundos.");
-        return;
-    }
-    startGame();
-};
-
 function startGame(){
     document.getElementById("menu").style.display="none";
     document.getElementById("creditos").style.display="none";
@@ -131,6 +116,25 @@ class Bullet{
 }
 
 // ---------------- PLAYER ----------------
+function drawPlayer(){
+    // Corpo
+    ctx.fillStyle="#0f0";
+    ctx.fillRect(player.x,player.y,PLAYER_SIZE,PLAYER_SIZE);
+    // Olhos
+    ctx.fillStyle="#000";
+    ctx.fillRect(player.x+10,player.y+10,5,5);
+    ctx.fillRect(player.x+25,player.y+10,5,5);
+    // Espada se estiver com sword
+    if(weapon==="sword"){
+        ctx.strokeStyle="#ff0";
+        ctx.lineWidth=4;
+        ctx.beginPath();
+        ctx.moveTo(player.x+PLAYER_SIZE/2, player.y+PLAYER_SIZE/2);
+        ctx.lineTo(mouse.x, mouse.y);
+        ctx.stroke();
+    }
+}
+
 function shoot(){
     if(shootCooldown>0) return;
     fireBullet();
@@ -161,34 +165,22 @@ function sword(){
 
 // ---------------- SPAWN ----------------
 function spawnEnemy(type="normal"){
-    let enemy = {
-        x: Math.random()*(W-28),
-        y: Math.random()*(H-28),
-        w: 28, h:28,
-        vx: Math.random()*1.5-0.75,
-        vy: Math.random()*1.5-0.75,
-        shootTimer:0,
-        shootInterval: type==="normal"?100: type==="sniper"?140: 0,
-        hp: type==="normal"?3:type==="dasher"?5:2,
-        type: type
-    };
+    let enemy = {x: Math.random()*(W-28), y: Math.random()*(H-28), w:28, h:28,
+                 vx: Math.random()*1.5-0.75, vy: Math.random()*1.5-0.75,
+                 shootTimer:0, shootInterval:type==="normal"?100:0,
+                 hp:type==="normal"?3:5, type:type};
     enemies.push(enemy);
 }
 function spawnBoss(){
-    enemies.push({
-        x:W/2-100, y:40,
-        w:200, h:200,
-        vx:1.2, vy:1.2,
-        shootTimer:0, shootInterval:50,
-        isBoss:true, maxHp:250+stage*50, hp:250+stage*50,
-        patternTimer:0
-    });
+    enemies.push({x:W/2-100, y:40, w:200, h:200, vx:1.2, vy:1.2,
+                  shootTimer:0, shootInterval:50,
+                  isBoss:true, maxHp:250+stage*50, hp:250+stage*50,
+                  patternTimer:0});
     phase="boss";
 }
 function spawnWave(){
     phase="wave";
     for(let i=0;i<2+stage;i++) spawnEnemy("normal");
-    for(let i=0;i<1;i++) spawnEnemy("dasher");
 }
 
 // ---------------- HIT / KILL ----------------
@@ -213,12 +205,10 @@ function showShop(){
     showingCards=true; gameActive=false;
     const div=document.getElementById("cartas");
     div.innerHTML=""; div.style.display="flex";
-    const pool=[
-        {t:"+1 vida máxima", f:()=>{maxLives++; lives++;}},
-        {t:"Tiro duplo", f:()=>{doubleShot=true;}},
-        {t:"Espada maior", f:()=>{swordRange+=40;}},
-        {t:"Velocidade +", f:()=>{player.speed+=1;}}
-    ];
+    const pool=[{t:"+1 vida máxima", f:()=>{maxLives++; lives++;}},
+                {t:"Tiro duplo", f:()=>{doubleShot=true;}},
+                {t:"Espada maior", f:()=>{swordRange+=40;}},
+                {t:"Velocidade +", f:()=>{player.speed+=1;}}];
     shuffle(pool);
     for(let i=0;i<3;i++){
         let c=document.createElement("div");
@@ -245,37 +235,11 @@ function update(){
 
     enemies.forEach(e=>{
         if(e.type!=="dasher"){ e.x+=e.vx; e.y+=e.vy; if(e.x<0||e.x+e.w>W)e.vx*=-1; if(e.y<0||e.y+e.h>H)e.vy*=-1; }
-        else{ let dx=player.x-e.x, dy=player.y-e.y; let d=Math.hypot(dx,dy)||1; e.x+=dx/d*2; e.y+=dy/d*2; }
-        if(e.isBoss) bossPattern(e);
-        else{
-            e.shootTimer++;
-            if(e.type!=="dasher" && e.shootTimer>=e.shootInterval){
-                enemyBullets.push(new Bullet(e.x+e.w/2,e.y+e.h/2,player.x+PLAYER_SIZE/2,player.y+PLAYER_SIZE/2,4,"#44f"));
-                e.shootTimer=0;
-            }
-        }
+        updateBullets(playerBullets,true);
+        updateBullets(enemyBullets,false);
     });
-
-    updateBullets(playerBullets,true);
-    updateBullets(enemyBullets,false);
 }
 
-// ---------------- BOSS PATTERN ----------------
-function bossPattern(b){
-    b.patternTimer++;
-    if(b.shootTimer>=b.shootInterval){
-        let cx=b.x+b.w/2, cy=b.y+b.h/2;
-        for(let i=0;i<12;i++){
-            let a=i*Math.PI*2/12;
-            enemyBullets.push(new Bullet(cx,cy,cx+Math.cos(a)*300,cy+Math.sin(a)*300,3,"#f0f"));
-        }
-        b.shootTimer=0; b.patternTimer=0;
-    } else b.shootTimer++;
-    if(b.x<=0||b.x+b.w>=W) b.vx*=-1;
-    b.x+=b.vx; b.y+=Math.sin(b.patternTimer/30)*1;
-}
-
-// ---------------- BULLETS ----------------
 function updateBullets(arr,isPlayer){
     for(let i=arr.length-1;i>=0;i--){
         let b=arr[i]; b.update();
@@ -293,20 +257,12 @@ function updateBullets(arr,isPlayer){
     }
 }
 
-// ---------------- GAME OVER ----------------
 function gameOver(){gameActive=false; gameOverFlag=true;}
 
 // ---------------- DRAW ----------------
 function draw(){
     ctx.clearRect(0,0,W,H);
-    // Player
-    if(playerSpriteLoaded){
-        ctx.drawImage(playerSprite, player.x, player.y, PLAYER_SIZE, PLAYER_SIZE);
-    }else{
-        ctx.fillStyle="#0f0";
-        ctx.fillRect(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE);
-    }
-    // Enemies
+    drawPlayer();
     enemies.forEach(e=>{
         ctx.fillStyle=e.isBoss?"#600":e.type==="dasher"?"#f33":"#f0f";
         ctx.fillRect(e.x,e.y,e.w,e.h);
@@ -316,16 +272,16 @@ function draw(){
             ctx.fillStyle="red"; ctx.fillRect(e.x,e.y-10,bw,6);
         }
     });
-    // Bullets
     playerBullets.forEach(b=>b.draw());
     enemyBullets.forEach(b=>b.draw());
-    // HUD
+
     ctx.fillStyle="#0f0";
     ctx.fillText("Fase: "+stage,10,18);
     ctx.fillText("Vidas: "+lives+"/"+maxLives,10,34);
     ctx.fillText("Kills: "+kills,10,50);
     ctx.fillText("Score: "+score,10,66);
     ctx.fillText("Arma: "+(weapon==="gun"?"Tiro":"Espada"),10,82);
+
     if(gameOverFlag){
         ctx.fillStyle="rgba(0,0,0,0.7)";
         ctx.fillRect(0,0,W,H);
