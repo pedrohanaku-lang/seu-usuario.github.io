@@ -1,242 +1,131 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Evite as Balas – Roguelike</title>
-
-<style>
-body{
-    margin:0;
-    background:#111;
-    color:#0f0;
-    font-family:Arial, Helvetica, sans-serif;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    height:100vh;
-}
-
-canvas{
-    background:#000;
-    border:3px solid #0f0;
-    display:none;
-    position:absolute;
-    z-index:1;
-}
-
-#menu,#creditos,#cartas{
-    position:absolute;
-    top:50%;
-    left:50%;
-    transform:translate(-50%,-50%);
-    background:#000;
-    border:2px solid #0f0;
-    padding:25px;
-    text-align:center;
-    z-index:10;
-}
-
-#cartas{
-    display:none;
-    gap:15px;
-}
-
-.cartao{
-    width:160px;
-    border:2px solid #0f0;
-    padding:15px;
-    background:#111;
-    cursor:pointer;
-}
-
-.cartao:hover{
-    background:#0f0;
-    color:#000;
-}
-
-button{
-    padding:12px 28px;
-    font-size:18px;
-    cursor:pointer;
-    margin:10px;
-    border:none;
-    background:#0f0;
-    color:#000;
-}
-</style>
-</head>
-<body>
-
-<canvas id="c" width="800" height="600"></canvas>
-
-<div id="menu">
-    <h1>EVITE AS BALAS</h1>
-    <button onclick="startGame()">JOGAR</button><br>
-    <button onclick="showCredits()">CRÉDITOS</button>
-</div>
-
-<div id="creditos" style="display:none">
-    <h2>CRÉDITOS</h2>
-    <p>Scripter: Hanako</p>
-    <p>Design: Barros</p>
-    <button onclick="backMenu()">VOLTAR</button>
-</div>
-
-<div id="cartas"></div>
-
 <script>
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
-let player;
-let enemies = [];
-let playerBullets = [];
-let enemyBullets = [];
-
-let keys = {};
-let mouse = {x:400,y:300};
-
-let gameActive = false;
-let showingCards = false;
-let gameOverFlag = false;
-
-let score = 0;
-let kills = 0;
-
-let stage = 1;
-
-let maxLives = 3;
-let lives = 3;
-
-let doubleShot = false;
-let swordRange = 70;
-
-let swordCooldown = 0;
-
+const W = 800, H = 600;
 const PLAYER_SIZE = 28;
 
-/* ----------------- MENU ----------------- */
+let player,enemies,playerBullets,enemyBullets;
+let keys={},mouse={x:400,y:300};
+
+let gameActive=false,showingCards=false,gameOverFlag=false;
+
+let stage=1;
+let score=0;
+let kills=0;
+
+let maxLives=3,lives=3;
+
+let doubleShot=false;
+let swordRange=70;
+
+let swordCooldown=0;
+let shootCooldown=0;
+
+let phase="wave"; // wave | boss | cards
+
+/* ---------------- MENU ---------------- */
 
 function startGame(){
     document.getElementById("menu").style.display="none";
     document.getElementById("creditos").style.display="none";
     canvas.style.display="block";
-
     resetRun();
-    gameActive = true;
+    gameActive=true;
 }
 
-function backMenu(){
-    document.getElementById("creditos").style.display="none";
-    document.getElementById("menu").style.display="block";
-}
-
-function showCredits(){
-    document.getElementById("menu").style.display="none";
-    document.getElementById("creditos").style.display="block";
-}
-
-/* ----------------- RESET RUN ----------------- */
+/* ------------- RESET ------------- */
 
 function resetRun(){
 
-    player = {
-        x:400,
-        y:300,
-        speed:4
-    };
+    player={x:400,y:300,speed:4};
 
-    enemies = [];
-    playerBullets = [];
-    enemyBullets = [];
+    enemies=[];
+    playerBullets=[];
+    enemyBullets=[];
 
-    score = 0;
-    kills = 0;
-    stage = 1;
+    stage=1;
+    score=0;
+    kills=0;
 
-    maxLives = 3;
-    lives = 3;
+    maxLives=3;
+    lives=3;
 
-    doubleShot = false;
-    swordRange = 70;
+    doubleShot=false;
+    swordRange=70;
 
-    swordCooldown = 0;
+    swordCooldown=0;
+    shootCooldown=0;
 
-    gameOverFlag = false;
+    phase="wave";
+
+    gameOverFlag=false;
+    showingCards=false;
 
     spawnWave();
 }
 
-/* ----------------- INPUT ----------------- */
+/* ---------------- INPUT ---------------- */
 
 window.addEventListener("keydown",e=>{
-    keys[e.key.toLowerCase()] = true;
+    keys[e.key.toLowerCase()]=true;
 
     if(e.key.toLowerCase()==="r" && gameOverFlag){
         canvas.style.display="none";
         document.getElementById("menu").style.display="block";
     }
 });
-
 window.addEventListener("keyup",e=>{
-    keys[e.key.toLowerCase()] = false;
+    keys[e.key.toLowerCase()]=false;
 });
 
-canvas.oncontextmenu = e=>e.preventDefault();
-
+canvas.oncontextmenu=e=>e.preventDefault();
 canvas.addEventListener("mousemove",e=>{
-    const r=canvas.getBoundingClientRect();
-    mouse.x = e.clientX-r.left;
-    mouse.y = e.clientY-r.top;
+    let r=canvas.getBoundingClientRect();
+    mouse.x=e.clientX-r.left;
+    mouse.y=e.clientY-r.top;
 });
-
 canvas.addEventListener("mousedown",e=>{
     if(e.button===2 && gameActive) shoot();
 });
 
-/* ----------------- CLASSES ----------------- */
+/* ---------------- CLASSES ---------------- */
 
 class Bullet{
-    constructor(x,y,tx,ty,speed,color){
-        this.x=x; this.y=y;
-        let dx=tx-x, dy=ty-y;
+    constructor(x,y,tx,ty,s,c){
+        this.x=x;this.y=y;
+        let dx=tx-x,dy=ty-y;
         let d=Math.hypot(dx,dy)||1;
-        this.vx=dx/d*speed;
-        this.vy=dy/d*speed;
-        this.color=color;
+        this.vx=dx/d*s;
+        this.vy=dy/d*s;
+        this.c=c;
     }
-    update(){
-        this.x+=this.vx;
-        this.y+=this.vy;
-    }
+    update(){this.x+=this.vx;this.y+=this.vy;}
     draw(){
-        ctx.fillStyle=this.color;
+        ctx.fillStyle=this.c;
         ctx.fillRect(this.x-4,this.y-4,8,8);
     }
-    off(){
-        return this.x<-20||this.x>820||this.y<-20||this.y>620;
-    }
+    off(){return this.x<-20||this.x>W+20||this.y<-20||this.y>H+20;}
 }
 
-/* ----------------- COMBATE ----------------- */
+/* ---------------- PLAYER ---------------- */
 
 function shoot(){
-    createPlayerBullet();
+    if(shootCooldown>0) return;
 
-    if(doubleShot){
-        setTimeout(createPlayerBullet,70);
-    }
+    fireBullet();
+
+    if(doubleShot) setTimeout(fireBullet,60);
+
+    shootCooldown=12;
 }
 
-function createPlayerBullet(){
-    playerBullets.push(
-        new Bullet(
-            player.x+PLAYER_SIZE/2,
-            player.y+PLAYER_SIZE/2,
-            mouse.x,mouse.y,
-            7,"#f44"
-        )
-    );
+function fireBullet(){
+    playerBullets.push(new Bullet(
+        player.x+PLAYER_SIZE/2,
+        player.y+PLAYER_SIZE/2,
+        mouse.x,mouse.y,7,"#f44"
+    ));
 }
 
 function sword(){
@@ -247,8 +136,8 @@ function sword(){
             e.x+e.w/2-(player.x+PLAYER_SIZE/2),
             e.y+e.h/2-(player.y+PLAYER_SIZE/2)
         );
-        if(d < swordRange){
-            killEnemy(i);
+        if(d<swordRange){
+            hitEnemy(i);
             break;
         }
     }
@@ -259,20 +148,19 @@ function sword(){
             b.x-(player.x+PLAYER_SIZE/2),
             b.y-(player.y+PLAYER_SIZE/2)
         );
-        if(d < swordRange){
+        if(d<swordRange){
             enemyBullets.splice(i,1);
         }
     }
 }
 
-/* ----------------- SPAWN ----------------- */
+/* ---------------- SPAWN ---------------- */
 
 function spawnEnemy(){
     enemies.push({
-        x:Math.random()*(760),
-        y:Math.random()*(560),
-        w:28,
-        h:28,
+        x:Math.random()*(W-28),
+        y:Math.random()*(H-28),
+        w:28,h:28,
         vx:Math.random()*2-1,
         vy:Math.random()*2-1,
         shootTimer:0,
@@ -283,80 +171,95 @@ function spawnEnemy(){
 function spawnBoss(){
 
     enemies.push({
-        x:300,
-        y:40,
-        w:180,
-        h:180,
-        vx:1.5,
-        vy:1,
+        x:W/2-90,y:40,
+        w:180,h:180,
+        vx:1.2,vy:1,
         shootTimer:0,
         shootInterval:20,
         isBoss:true,
-        hp:80 + stage*30
+        maxHp:120+stage*40,
+        hp:120+stage*40
     });
+
+    phase="boss";
 }
 
 function spawnWave(){
-    for(let i=0;i<5+stage;i++) spawnEnemy();
+    phase="wave";
+    for(let i=0;i<4+stage;i++) spawnEnemy();
 }
 
-/* ----------------- KILL ----------------- */
+/* ---------------- HIT / KILL ---------------- */
 
-function killEnemy(index){
+function hitEnemy(i){
 
-    let e = enemies.splice(index,1)[0];
-    kills++;
+    let e=enemies[i];
 
     if(e.isBoss){
-
-        openCards();
-
-        setTimeout(()=>{
-            stage++;
-            spawnWave();
-        },200);
-
+        e.hp--;
+        if(e.hp<=0){
+            killEnemy(i);
+        }
         return;
     }
 
-    score+=10;
-
-    if(kills % (10 + stage*2) === 0){
-        spawnBoss();
-    }
+    killEnemy(i);
 }
 
-/* ----------------- CARDS ----------------- */
+function killEnemy(i){
+
+    let e=enemies.splice(i,1)[0];
+    kills++;
+
+    if(!e.isBoss){
+        score+=10;
+
+        if(phase==="wave" && enemies.length===0){
+            spawnBoss();
+        }
+        return;
+    }
+
+    // boss morreu
+    openCards();
+
+    setTimeout(()=>{
+        stage++;
+        spawnWave();
+    },200);
+}
+
+/* ---------------- CARDS ---------------- */
 
 function openCards(){
 
-    showingCards = true;
-    gameActive = false;
+    showingCards=true;
+    gameActive=false;
 
-    const div = document.getElementById("cartas");
+    const div=document.getElementById("cartas");
     div.innerHTML="";
     div.style.display="flex";
 
-    const pool = [
-        {t:"+1 vida máxima", f:()=>{maxLives++;lives++;}},
-        {t:"Tiro duplo", f:()=>{doubleShot=true;}},
-        {t:"Espada maior", f:()=>{swordRange+=25;}},
-        {t:"Movimento +", f:()=>{player.speed+=0.6;}}
+    const pool=[
+        {t:"+1 vida máxima",f:()=>{maxLives++;lives++;}},
+        {t:"Tiro duplo",f:()=>{doubleShot=true;}},
+        {t:"Espada maior",f:()=>{swordRange+=25;}},
+        {t:"Velocidade +",f:()=>{player.speed+=0.6;}}
     ];
 
     shuffle(pool);
 
     for(let i=0;i<3;i++){
-        let c=document.createElement("div");
-        c.className="cartao";
-        c.textContent=pool[i].t;
-        c.onclick=()=>{
+        let d=document.createElement("div");
+        d.className="cartao";
+        d.textContent=pool[i].t;
+        d.onclick=()=>{
             pool[i].f();
             div.style.display="none";
             showingCards=false;
             gameActive=true;
         };
-        div.appendChild(c);
+        div.appendChild(d);
     }
 }
 
@@ -367,12 +270,13 @@ function shuffle(a){
     }
 }
 
-/* ----------------- UPDATE ----------------- */
+/* ---------------- UPDATE ---------------- */
 
 function update(){
 
     if(!gameActive) return;
 
+    if(shootCooldown>0) shootCooldown--;
     if(swordCooldown>0) swordCooldown--;
 
     if(keys[" "] && swordCooldown===0){
@@ -385,47 +289,43 @@ function update(){
     if(keys["a"]) player.x-=player.speed;
     if(keys["d"]) player.x+=player.speed;
 
-    player.x=Math.max(0,Math.min(800-PLAYER_SIZE,player.x));
-    player.y=Math.max(0,Math.min(600-PLAYER_SIZE,player.y));
+    player.x=Math.max(0,Math.min(W-PLAYER_SIZE,player.x));
+    player.y=Math.max(0,Math.min(H-PLAYER_SIZE,player.y));
 
     enemies.forEach(e=>{
 
         e.x+=e.vx;
         e.y+=e.vy;
 
-        if(e.x<0||e.x+e.w>800) e.vx*=-1;
-        if(e.y<0||e.y+e.h>600) e.vy*=-1;
+        if(e.x<0||e.x+e.w>W) e.vx*=-1;
+        if(e.y<0||e.y+e.h>H) e.vy*=-1;
 
         e.shootTimer++;
 
         if(e.shootTimer>=e.shootInterval){
 
             if(e.isBoss){
+
                 let cx=e.x+e.w/2;
                 let cy=e.y+e.h/2;
 
-                for(let i=0;i<10;i++){
-                    let a=i*(Math.PI*2/10);
-                    enemyBullets.push(
-                        new Bullet(
-                            cx,cy,
-                            cx+Math.cos(a)*300,
-                            cy+Math.sin(a)*300,
-                            4,"#f0f"
-                        )
-                    );
+                for(let k=0;k<12;k++){
+                    let a=k*Math.PI*2/12;
+                    enemyBullets.push(new Bullet(
+                        cx,cy,
+                        cx+Math.cos(a)*300,
+                        cy+Math.sin(a)*300,
+                        4,"#f0f"
+                    ));
                 }
 
             }else{
-                enemyBullets.push(
-                    new Bullet(
-                        e.x+e.w/2,
-                        e.y+e.h/2,
-                        player.x+PLAYER_SIZE/2,
-                        player.y+PLAYER_SIZE/2,
-                        4.5,"#44f"
-                    )
-                );
+                enemyBullets.push(new Bullet(
+                    e.x+e.w/2,e.y+e.h/2,
+                    player.x+PLAYER_SIZE/2,
+                    player.y+PLAYER_SIZE/2,
+                    4.5,"#44f"
+                ));
             }
 
             e.shootTimer=0;
@@ -437,7 +337,7 @@ function update(){
     updateBullets(enemyBullets,false);
 }
 
-/* ----------------- BULLETS ----------------- */
+/* ---------------- BULLETS ---------------- */
 
 function updateBullets(arr,isPlayer){
 
@@ -456,14 +356,12 @@ function updateBullets(arr,isPlayer){
                 b.x-(player.x+PLAYER_SIZE/2),
                 b.y-(player.y+PLAYER_SIZE/2)
             );
-
             if(d<14){
                 arr.splice(i,1);
                 lives--;
                 if(lives<=0) gameOver();
             }
         }else{
-
             for(let j=enemies.length-1;j>=0;j--){
                 let e=enemies[j];
                 let d=Math.hypot(
@@ -472,47 +370,40 @@ function updateBullets(arr,isPlayer){
                 );
                 if(d<18){
                     arr.splice(i,1);
-
-                    if(e.isBoss){
-                        e.hp--;
-                        if(e.hp<=0) killEnemy(j);
-                    }else{
-                        killEnemy(j);
-                    }
+                    hitEnemy(j);
                     break;
                 }
             }
-
         }
-
     }
 }
 
-/* ----------------- GAME OVER ----------------- */
+/* ---------------- GAME OVER ---------------- */
 
 function gameOver(){
     gameActive=false;
     gameOverFlag=true;
 }
 
-/* ----------------- DRAW ----------------- */
+/* ---------------- DRAW ---------------- */
 
 function draw(){
 
-    ctx.clearRect(0,0,800,600);
+    ctx.clearRect(0,0,W,H);
 
     ctx.fillStyle="#0f0";
     ctx.fillRect(player.x,player.y,PLAYER_SIZE,PLAYER_SIZE);
 
     enemies.forEach(e=>{
-        ctx.fillStyle=e.isBoss?"#500":"#f0f";
+        ctx.fillStyle=e.isBoss?"#600":"#f0f";
         ctx.fillRect(e.x,e.y,e.w,e.h);
 
         if(e.isBoss){
+            let bw=e.w*(e.hp/e.maxHp);
             ctx.fillStyle="#fff";
-            ctx.fillRect(e.x,e.y-8,e.w,5);
+            ctx.fillRect(e.x,e.y-10,e.w,6);
             ctx.fillStyle="red";
-            ctx.fillRect(e.x,e.y-8,e.w*(e.hp/(80+stage*30)),5);
+            ctx.fillRect(e.x,e.y-10,bw,6);
         }
     });
 
@@ -527,16 +418,16 @@ function draw(){
 
     if(gameOverFlag){
         ctx.fillStyle="rgba(0,0,0,0.7)";
-        ctx.fillRect(0,0,800,600);
+        ctx.fillRect(0,0,W,H);
         ctx.fillStyle="red";
         ctx.font="40px Arial";
-        ctx.fillText("GAME OVER",280,300);
+        ctx.fillText("GAME OVER",W/2-120,H/2);
         ctx.font="18px Arial";
-        ctx.fillText("Pressione R para voltar ao menu",260,340);
+        ctx.fillText("Pressione R para voltar ao menu",W/2-150,H/2+30);
     }
 }
 
-/* ----------------- LOOP ----------------- */
+/* ---------------- LOOP ---------------- */
 
 function loop(){
     requestAnimationFrame(loop);
@@ -546,9 +437,5 @@ function loop(){
 
 loop();
 </script>
-
-</body>
-</html>
-
 
 
