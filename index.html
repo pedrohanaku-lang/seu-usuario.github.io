@@ -1,3 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Evite as Balas – Roguelike</title>
+<style>
+body{
+    margin:0;
+    background:#111;
+    color:#0f0;
+    font-family:Arial, Helvetica, sans-serif;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+}
+canvas{
+    background:#000;
+    border:3px solid #0f0;
+    display:none; /* será mostrado via JS */
+    position:absolute;
+    z-index:1;
+}
+#menu,#creditos,#cartas{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    background:#000;
+    border:2px solid #0f0;
+    padding:25px;
+    text-align:center;
+    z-index:10;
+}
+#cartas{
+    display:none;
+    gap:15px;
+}
+.cartao{
+    width:160px;
+    border:2px solid #0f0;
+    padding:15px;
+    background:#111;
+    cursor:pointer;
+}
+.cartao:hover{
+    background:#0f0;
+    color:#000;
+}
+button{
+    padding:12px 28px;
+    font-size:18px;
+    cursor:pointer;
+    margin:10px;
+    border:none;
+    background:#0f0;
+    color:#000;
+}
+</style>
+</head>
+<body>
+
+<canvas id="c" width="800" height="600"></canvas>
+
+<div id="menu">
+    <h1>EVITE AS BALAS</h1>
+    <button onclick="startGame()">JOGAR</button><br>
+    <button onclick="showCredits()">CRÉDITOS</button>
+</div>
+
+<div id="creditos" style="display:none">
+    <h2>CRÉDITOS</h2>
+    <p>Scripter: Hanako</p>
+    <p>Design: Barros</p>
+    <button onclick="backMenu()">VOLTAR</button>
+</div>
+
+<div id="cartas"></div>
+
 <script>
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -30,16 +109,29 @@ function startGame(){
     document.getElementById("menu").style.display="none";
     document.getElementById("creditos").style.display="none";
     canvas.style.display="block";
+
+    ctx.font = "16px Arial";
+    ctx.fillStyle = "#0f0";
+
     resetRun();
     gameActive=true;
 }
 
-/* ------------- RESET ------------- */
+function backMenu(){
+    document.getElementById("creditos").style.display="none";
+    document.getElementById("menu").style.display="block";
+    canvas.style.display="none";
+}
+
+function showCredits(){
+    document.getElementById("menu").style.display="none";
+    document.getElementById("creditos").style.display="block";
+}
+
+/* ---------------- RESET ---------------- */
 
 function resetRun(){
-
     player={x:400,y:300,speed:4};
-
     enemies=[];
     playerBullets=[];
     enemyBullets=[];
@@ -58,7 +150,6 @@ function resetRun(){
     shootCooldown=0;
 
     phase="wave";
-
     gameOverFlag=false;
     showingCards=false;
 
@@ -75,9 +166,7 @@ window.addEventListener("keydown",e=>{
         document.getElementById("menu").style.display="block";
     }
 });
-window.addEventListener("keyup",e=>{
-    keys[e.key.toLowerCase()]=false;
-});
+window.addEventListener("keyup",e=>{ keys[e.key.toLowerCase()]=false; });
 
 canvas.oncontextmenu=e=>e.preventDefault();
 canvas.addEventListener("mousemove",e=>{
@@ -101,10 +190,7 @@ class Bullet{
         this.c=c;
     }
     update(){this.x+=this.vx;this.y+=this.vy;}
-    draw(){
-        ctx.fillStyle=this.c;
-        ctx.fillRect(this.x-4,this.y-4,8,8);
-    }
+    draw(){ ctx.fillStyle=this.c; ctx.fillRect(this.x-4,this.y-4,8,8); }
     off(){return this.x<-20||this.x>W+20||this.y<-20||this.y>H+20;}
 }
 
@@ -114,12 +200,10 @@ function shoot(){
     if(shootCooldown>0) return;
 
     fireBullet();
-
     if(doubleShot) setTimeout(fireBullet,60);
 
     shootCooldown=12;
 }
-
 function fireBullet(){
     playerBullets.push(new Bullet(
         player.x+PLAYER_SIZE/2,
@@ -129,160 +213,79 @@ function fireBullet(){
 }
 
 function sword(){
-
     for(let i=enemies.length-1;i>=0;i--){
         let e=enemies[i];
-        let d=Math.hypot(
-            e.x+e.w/2-(player.x+PLAYER_SIZE/2),
-            e.y+e.h/2-(player.y+PLAYER_SIZE/2)
-        );
-        if(d<swordRange){
-            hitEnemy(i);
-            break;
-        }
+        let d=Math.hypot(e.x+e.w/2-(player.x+PLAYER_SIZE/2), e.y+e.h/2-(player.y+PLAYER_SIZE/2));
+        if(d<swordRange){ hitEnemy(i); break; }
     }
-
     for(let i=enemyBullets.length-1;i>=0;i--){
         let b=enemyBullets[i];
-        let d=Math.hypot(
-            b.x-(player.x+PLAYER_SIZE/2),
-            b.y-(player.y+PLAYER_SIZE/2)
-        );
-        if(d<swordRange){
-            enemyBullets.splice(i,1);
-        }
+        let d=Math.hypot(b.x-(player.x+PLAYER_SIZE/2), b.y-(player.y+PLAYER_SIZE/2));
+        if(d<swordRange){ enemyBullets.splice(i,1); }
     }
 }
 
 /* ---------------- SPAWN ---------------- */
 
 function spawnEnemy(){
-    enemies.push({
-        x:Math.random()*(W-28),
-        y:Math.random()*(H-28),
-        w:28,h:28,
-        vx:Math.random()*2-1,
-        vy:Math.random()*2-1,
-        shootTimer:0,
-        shootInterval:70
-    });
+    enemies.push({x:Math.random()*(W-28),y:Math.random()*(H-28),w:28,h:28,vx:Math.random()*2-1,vy:Math.random()*2-1,shootTimer:0,shootInterval:70});
 }
-
 function spawnBoss(){
-
-    enemies.push({
-        x:W/2-90,y:40,
-        w:180,h:180,
-        vx:1.2,vy:1,
-        shootTimer:0,
-        shootInterval:20,
-        isBoss:true,
-        maxHp:120+stage*40,
-        hp:120+stage*40
-    });
-
+    enemies.push({x:W/2-90,y:40,w:180,h:180,vx:1.2,vy:1,shootTimer:0,shootInterval:20,isBoss:true,maxHp:120+stage*40,hp:120+stage*40});
     phase="boss";
 }
-
-function spawnWave(){
-    phase="wave";
-    for(let i=0;i<4+stage;i++) spawnEnemy();
-}
+function spawnWave(){ phase="wave"; for(let i=0;i<4+stage;i++) spawnEnemy(); }
 
 /* ---------------- HIT / KILL ---------------- */
 
 function hitEnemy(i){
-
     let e=enemies[i];
-
-    if(e.isBoss){
-        e.hp--;
-        if(e.hp<=0){
-            killEnemy(i);
-        }
-        return;
-    }
-
+    if(e.isBoss){ e.hp--; if(e.hp<=0) killEnemy(i); return; }
     killEnemy(i);
 }
-
 function killEnemy(i){
-
     let e=enemies.splice(i,1)[0];
     kills++;
-
     if(!e.isBoss){
         score+=10;
-
-        if(phase==="wave" && enemies.length===0){
-            spawnBoss();
-        }
+        if(phase==="wave" && enemies.length===0) spawnBoss();
         return;
     }
-
-    // boss morreu
     openCards();
-
-    setTimeout(()=>{
-        stage++;
-        spawnWave();
-    },200);
+    setTimeout(()=>{ stage++; spawnWave(); },200);
 }
 
 /* ---------------- CARDS ---------------- */
 
 function openCards(){
-
     showingCards=true;
     gameActive=false;
-
     const div=document.getElementById("cartas");
-    div.innerHTML="";
-    div.style.display="flex";
-
+    div.innerHTML=""; div.style.display="flex";
     const pool=[
         {t:"+1 vida máxima",f:()=>{maxLives++;lives++;}},
         {t:"Tiro duplo",f:()=>{doubleShot=true;}},
         {t:"Espada maior",f:()=>{swordRange+=25;}},
         {t:"Velocidade +",f:()=>{player.speed+=0.6;}}
     ];
-
     shuffle(pool);
-
     for(let i=0;i<3;i++){
         let d=document.createElement("div");
         d.className="cartao";
         d.textContent=pool[i].t;
-        d.onclick=()=>{
-            pool[i].f();
-            div.style.display="none";
-            showingCards=false;
-            gameActive=true;
-        };
+        d.onclick=()=>{ pool[i].f(); div.style.display="none"; showingCards=false; gameActive=true; };
         div.appendChild(d);
     }
 }
-
-function shuffle(a){
-    for(let i=a.length-1;i>0;i--){
-        let j=Math.floor(Math.random()*(i+1));
-        [a[i],a[j]]=[a[j],a[i]];
-    }
-}
+function shuffle(a){for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];}}
 
 /* ---------------- UPDATE ---------------- */
 
 function update(){
-
     if(!gameActive) return;
-
     if(shootCooldown>0) shootCooldown--;
     if(swordCooldown>0) swordCooldown--;
-
-    if(keys[" "] && swordCooldown===0){
-        sword();
-        swordCooldown=25;
-    }
+    if(keys[" "] && swordCooldown===0){ sword(); swordCooldown=25; }
 
     if(keys["w"]) player.y-=player.speed;
     if(keys["s"]) player.y+=player.speed;
@@ -293,44 +296,22 @@ function update(){
     player.y=Math.max(0,Math.min(H-PLAYER_SIZE,player.y));
 
     enemies.forEach(e=>{
-
-        e.x+=e.vx;
-        e.y+=e.vy;
-
+        e.x+=e.vx; e.y+=e.vy;
         if(e.x<0||e.x+e.w>W) e.vx*=-1;
         if(e.y<0||e.y+e.h>H) e.vy*=-1;
-
         e.shootTimer++;
-
         if(e.shootTimer>=e.shootInterval){
-
             if(e.isBoss){
-
-                let cx=e.x+e.w/2;
-                let cy=e.y+e.h/2;
-
+                let cx=e.x+e.w/2,cy=e.y+e.h/2;
                 for(let k=0;k<12;k++){
                     let a=k*Math.PI*2/12;
-                    enemyBullets.push(new Bullet(
-                        cx,cy,
-                        cx+Math.cos(a)*300,
-                        cy+Math.sin(a)*300,
-                        4,"#f0f"
-                    ));
+                    enemyBullets.push(new Bullet(cx,cy,cx+Math.cos(a)*300,cy+Math.sin(a)*300,4,"#f0f"));
                 }
-
             }else{
-                enemyBullets.push(new Bullet(
-                    e.x+e.w/2,e.y+e.h/2,
-                    player.x+PLAYER_SIZE/2,
-                    player.y+PLAYER_SIZE/2,
-                    4.5,"#44f"
-                ));
+                enemyBullets.push(new Bullet(e.x+e.w/2,e.y+e.h/2,player.x+PLAYER_SIZE/2,player.y+PLAYER_SIZE/2,4.5,"#44f"));
             }
-
             e.shootTimer=0;
         }
-
     });
 
     updateBullets(playerBullets,true);
@@ -340,39 +321,18 @@ function update(){
 /* ---------------- BULLETS ---------------- */
 
 function updateBullets(arr,isPlayer){
-
     for(let i=arr.length-1;i>=0;i--){
-
-        let b=arr[i];
-        b.update();
-
-        if(b.off()){
-            arr.splice(i,1);
-            continue;
-        }
+        let b=arr[i]; b.update();
+        if(b.off()){ arr.splice(i,1); continue; }
 
         if(!isPlayer){
-            let d=Math.hypot(
-                b.x-(player.x+PLAYER_SIZE/2),
-                b.y-(player.y+PLAYER_SIZE/2)
-            );
-            if(d<14){
-                arr.splice(i,1);
-                lives--;
-                if(lives<=0) gameOver();
-            }
+            let d=Math.hypot(b.x-(player.x+PLAYER_SIZE/2),b.y-(player.y+PLAYER_SIZE/2));
+            if(d<14){ arr.splice(i,1); lives--; if(lives<=0) gameOver(); }
         }else{
             for(let j=enemies.length-1;j>=0;j--){
                 let e=enemies[j];
-                let d=Math.hypot(
-                    b.x-(e.x+e.w/2),
-                    b.y-(e.y+e.h/2)
-                );
-                if(d<18){
-                    arr.splice(i,1);
-                    hitEnemy(j);
-                    break;
-                }
+                let d=Math.hypot(b.x-(e.x+e.w/2),b.y-(e.y+e.h/2));
+                if(d<18){ arr.splice(i,1); hitEnemy(j); break; }
             }
         }
     }
@@ -380,19 +340,14 @@ function updateBullets(arr,isPlayer){
 
 /* ---------------- GAME OVER ---------------- */
 
-function gameOver(){
-    gameActive=false;
-    gameOverFlag=true;
-}
+function gameOver(){ gameActive=false; gameOverFlag=true; }
 
 /* ---------------- DRAW ---------------- */
 
 function draw(){
-
     ctx.clearRect(0,0,W,H);
 
-    ctx.fillStyle="#0f0";
-    ctx.fillRect(player.x,player.y,PLAYER_SIZE,PLAYER_SIZE);
+    ctx.fillStyle="#0f0"; ctx.fillRect(player.x,player.y,PLAYER_SIZE,PLAYER_SIZE);
 
     enemies.forEach(e=>{
         ctx.fillStyle=e.isBoss?"#600":"#f0f";
@@ -400,10 +355,8 @@ function draw(){
 
         if(e.isBoss){
             let bw=e.w*(e.hp/e.maxHp);
-            ctx.fillStyle="#fff";
-            ctx.fillRect(e.x,e.y-10,e.w,6);
-            ctx.fillStyle="red";
-            ctx.fillRect(e.x,e.y-10,bw,6);
+            ctx.fillStyle="#fff"; ctx.fillRect(e.x,e.y-10,e.w,6);
+            ctx.fillStyle="red"; ctx.fillRect(e.x,e.y-10,bw,6);
         }
     });
 
@@ -417,25 +370,17 @@ function draw(){
     ctx.fillText("Score: "+score,10,66);
 
     if(gameOverFlag){
-        ctx.fillStyle="rgba(0,0,0,0.7)";
-        ctx.fillRect(0,0,W,H);
-        ctx.fillStyle="red";
-        ctx.font="40px Arial";
+        ctx.fillStyle="rgba(0,0,0,0.7)"; ctx.fillRect(0,0,W,H);
+        ctx.fillStyle="red"; ctx.font="40px Arial";
         ctx.fillText("GAME OVER",W/2-120,H/2);
-        ctx.font="18px Arial";
-        ctx.fillText("Pressione R para voltar ao menu",W/2-150,H/2+30);
+        ctx.font="18px Arial"; ctx.fillText("Pressione R para voltar ao menu",W/2-150,H/2+30);
     }
 }
 
 /* ---------------- LOOP ---------------- */
 
-function loop(){
-    requestAnimationFrame(loop);
-    update();
-    draw();
-}
-
+function loop(){ requestAnimationFrame(loop); update(); draw(); }
 loop();
 </script>
-
-
+</body>
+</html>
