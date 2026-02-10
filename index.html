@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo - Evite as Balas</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            background-color: #1a1a1a;
+            border: 2px solid #fff;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // Objeto Jogador
+        const player = {
+            x: 100,
+            y: 100,
+            width: 30,
+            height: 30,
+            speed: 5,
+            color: '#00FF00'
+        };
+
+        // Objeto Inimigo inicial
+        const initialEnemy = {
+            x: canvas.width - 80,
+            y: canvas.height - 80,
+            width: 30,
+            height: 30,
+            color: '#FF00FF',
+            shootTimer: 0,
+            shootInterval: 60
+        };
+
+        // Array de inimigos
+        let enemies = [initialEnemy];
+
+        // Array de balas do inimigo
+        let bulletEnemy = [];
+        
+        // Array de balas do jogador
+        let bulletPlayer = [];
+
+        // Posição do mouse
+        let mouseX = canvas.width / 2;
+        let mouseY = canvas.height / 2;
+
+        // Score e dificuldade
+        let score = 0;
+        let difficulty = 1;
+
+        // Controles de teclado
+        const keys = {};
+
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Rastrear posição do mouse
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+
+        // Atirar com botão direito
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 2 && gameActive) {
+                playerShoot();
+            }
+        });
+
+        // Desabilitar menu de contexto
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        // Função para desenhar retângulo
+        function drawRect(x, y, width, height, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, width, height);
+        }
+
+        // Função para desenhar texto
+        function drawText(text, x, y, size = 16) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = `${size}px Arial`;
+            ctx.fillText(text, x, y);
+        }
+
+        // Função para desenhar texto grande (score)
+        function drawBigText(text, x, y, size = 24) {
+            ctx.fillStyle = '#FFFF00';
+            ctx.font = `bold ${size}px Arial`;
+            ctx.fillText(text, x, y);
+        }
+
+        // Classe para balas
+        class Bullet {
+            constructor(x, y, targetX, targetY, color = '#0000FF') {
+                this.x = x;
+                this.y = y;
+                this.speed = 5;
+                this.color = color;
+                
+                // Calcular direção
+                const dx = targetX - x;
+                const dy = targetY - y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                this.vx = (dx / dist) * this.speed;
+                this.vy = (dy / dist) * this.speed;
+                
+                this.width = 10;
+                this.height = 10;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            draw() {
+                drawRect(this.x, this.y, this.width, this.height, this.color);
+            }
+
+            isOffScreen() {
+                return this.x < -10 || this.x > canvas.width + 10 || 
+                       this.y < -10 || this.y > canvas.height + 10;
+            }
+
+            colideComJogador(player) {
+                return this.x < player.x + player.width &&
+                       this.x + this.width > player.x &&
+                       this.y < player.y + player.height &&
+                       this.y + this.height > player.y;
+            }
+
+            colideComInimigo(enemy) {
+                return this.x < enemy.x + enemy.width &&
+                       this.x + this.width > enemy.x &&
+                       this.y < enemy.y + enemy.height &&
+                       this.y + this.height > enemy.y;
+            }
+        }
+
+        // Função para atualizar posição do jogador
+        function updatePlayer() {
+            if (keys['arrowleft'] || keys['a']) {
+                player.x -= player.speed;
+            }
+            if (keys['arrowright'] || keys['d']) {
+                player.x += player.speed;
+            }
+            if (keys['arrowup'] || keys['w']) {
+                player.y -= player.speed;
+            }
+            if (keys['arrowdown'] || keys['s']) {
+                player.y += player.speed;
+            }
+
+            // Limitar movimento na tela
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+            if (player.y < 0) player.y = 0;
+            if (player.y + player.height > canvas.height) player.y = canvas.height - player.height;
+        }
+
+        // Função para atualizar todos os inimigos
+        function updateEnemies() {
+            enemies.forEach(enemy => {
+                enemy.shootTimer++;
+                
+                if (enemy.shootTimer >= enemy.shootInterval) {
+                    bulletEnemy.push(new Bullet(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, player.x, player.y, '#0000FF'));
+                    enemy.shootTimer = 0;
+                }
+            });
+        }
+
+        // Função para o jogador atirar
+        function playerShoot() {
+            bulletPlayer.push(new Bullet(player.x + player.width / 2, player.y + player.height / 2, mouseX, mouseY, '#FF0000'));
+        }
+
+        // Função para spawnar inimigo aleatório
+        function spawnRandomEnemy() {
+            const newEnemy = {
+                x: Math.random() * (canvas.width - 60) + 30,
+                y: Math.random() * (canvas.height - 60) + 30,
+                width: 30,
+                height: 30,
+                color: '#FF00FF',
+                shootTimer: 0,
+                shootInterval: 60
+            };
+            enemies.push(newEnemy);
+        }
+
+        // Função para matar inimigo
+        function killEnemy(index) {
+            score++;
+            enemies.splice(index, 1);
+            
+            // A cada 3 mortes, aumenta dificuldade
+            if (score % 3 === 0) {
+                difficulty++;
+                for (let i = 0; i < difficulty; i++) {
+                    spawnRandomEnemy();
+                }
+            } else {
+                spawnRandomEnemy();
+            }
+        }
+
+        // Função para desenhar
+        function draw() {
+            // Limpar canvas
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Desenhar jogador
+            drawRect(player.x, player.y, player.width, player.height, player.color);
+
+            // Desenhar inimigos
+            enemies.forEach(enemy => {
+                drawRect(enemy.x, enemy.y, enemy.width, enemy.height, enemy.color);
+            });
+
+            // Desenhar balas do inimigo
+            bulletEnemy.forEach(bullet => {
+                bullet.draw();
+            });
+
+            // Desenhar balas do jogador
+            bulletPlayer.forEach(bullet => {
+                bullet.draw();
+            });
+
+            // Desenhar instruções
+            drawText('SETAS para mover | BOTÃO DIREITO para atirar | Evite as balas azuis!', 10, 20);
+
+            // Desenhar score
+            drawBigText(`Score: ${score}`, canvas.width - 200, 30);
+            drawBigText(`Dificuldade: ${difficulty}`, canvas.width - 200, 60);
+        }
+
+        // Função para atualizar
+        function update() {
+            updatePlayer();
+            updateEnemies();
+
+            // Atualizar balas do inimigo
+            bulletEnemy.forEach((bullet, index) => {
+                bullet.update();
+
+                // Verificar colisão com jogador
+                if (bullet.colideComJogador(player)) {
+                    bulletEnemy.splice(index, 1);
+                    gameOver();
+                }
+
+                // Remover balas que saíram da tela
+                if (bullet.isOffScreen()) {
+                    bulletEnemy.splice(index, 1);
+                }
+            });
+
+            // Atualizar balas do jogador
+            bulletPlayer.forEach((bullet, index) => {
+                bullet.update();
+
+                // Verificar colisão com inimigos
+                enemies.forEach((enemy, enemyIndex) => {
+                    if (bullet.colideComInimigo(enemy)) {
+                        bulletPlayer.splice(index, 1);
+                        killEnemy(enemyIndex);
+                    }
+                });
+
+                // Remover balas que saíram da tela
+                if (bullet.isOffScreen()) {
+                    bulletPlayer.splice(index, 1);
+                }
+            });
+        }
+
+        let gameActive = true;
+
+        function gameOver() {
+            gameActive = false;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            drawText('GAME OVER!', canvas.width / 2 - 60, canvas.height / 2 - 20, 40);
+            drawText(`Score Final: ${score}`, canvas.width / 2 - 100, canvas.height / 2 + 20, 24);
+            drawText('Pressione R para reiniciar', canvas.width / 2 - 130, canvas.height / 2 + 60, 20);
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'r' && !gameActive) {
+                location.reload();
+            }
+        });
+
+        // Loop do jogo
+        function gameLoop() {
+            if (gameActive) {
+                update();
+            }
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
