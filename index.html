@@ -47,7 +47,7 @@ let phase="wave";
 let weapon="gun"; 
 let swordHits=0;
 
-// Barra de ultimate
+// Barra ultimate
 let specialBar=0;
 const maxSpecial=5;
 
@@ -91,7 +91,7 @@ window.addEventListener("keydown",e=>{
         document.getElementById("menu").style.display="block";
     }
     if(e.key.toLowerCase()==="e") weapon = (weapon==="gun")?"sword":"gun";
-    if(e.key.toLowerCase()==="g" && specialBar>=maxSpecial) activateUltimate();
+    if(e.key.toLowerCase()==="g" && specialBar >= maxSpecial) activateUltimate();
 });
 window.addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;});
 canvas.oncontextmenu=e=>e.preventDefault();
@@ -142,25 +142,37 @@ function sword(){
     swordAttack.tx=mouse.x;
     swordAttack.ty=mouse.y;
 
-    // chance de destruir balas
+    // destrói balas e carrega ultimate
     for(let i=enemyBullets.length-1;i>=0;i--){
         let b=enemyBullets[i];
-        let d=Math.hypot(b.x-swordAttack.x, b.y-swordAttack.y);
+        let d=Math.hypot(b.x-swordAttack.x,b.y-swordAttack.y);
         if(d<swordAttack.length && Math.random()<swordAttack.destroyBulletChance){
             enemyBullets.splice(i,1);
-            specialBar=Math.min(maxSpecial,specialBar+1); // carregar ultimate com balas
+            specialBar=Math.min(maxSpecial,specialBar+1);
         }
     }
 
-    // dano nos inimigos
+    // dano em inimigos
     for(let i=enemies.length-1;i>=0;i--){
         let e=enemies[i];
-        let dx=(e.x+e.w/2)-swordAttack.x;
-        let dy=(e.y+e.h/2)-swordAttack.y;
-        let d=Math.hypot(dx,dy);
-        if(d<swordAttack.length){
-            hitEnemy(i);
-            if(Math.random()<0.3) hitEnemy(i);
+        // NPC normal: distância até centro
+        if(!e.isBoss){
+            let dx=(e.x+e.w/2)-swordAttack.x;
+            let dy=(e.y+e.h/2)-swordAttack.y;
+            if(Math.hypot(dx,dy)<swordAttack.length){
+                hitEnemy(i);
+                specialBar=Math.min(maxSpecial,specialBar+1);
+            }
+        } else {
+            // Boss: hitbox completa
+            let closestX=Math.max(e.x,Math.min(swordAttack.tx,e.x+e.w));
+            let closestY=Math.max(e.y,Math.min(swordAttack.ty,e.y+e.h));
+            let dx=closestX-swordAttack.x;
+            let dy=closestY-swordAttack.y;
+            if(Math.hypot(dx,dy)<swordAttack.length){
+                hitEnemy(i);
+                specialBar=Math.min(maxSpecial,specialBar+1);
+            }
         }
     }
 }
@@ -172,8 +184,8 @@ function drawSword(){
     let dx=swordAttack.tx-swordAttack.x;
     let dy=swordAttack.ty-swordAttack.y;
     let dist=Math.hypot(dx,dy);
-    let ex=swordAttack.x + dx/dist * swordAttack.length;
-    let ey=swordAttack.y + dy/dist * swordAttack.length;
+    let ex=swordAttack.x + dx/dist * swordRange;
+    let ey=swordAttack.y + dy/dist * swordRange;
     ctx.beginPath();
     ctx.moveTo(swordAttack.x,swordAttack.y);
     ctx.lineTo(ex,ey);
@@ -216,7 +228,7 @@ function spawnEnemy(type="normal"){
 
 function spawnBoss(){
     enemies.push({x:W/2-100,y:40,w:200,h:200,vx:1.2,vy:1.2,
-                  shootTimer:0, shootInterval:50,
+                  shootTimer:0, shootInterval:0,
                   isBoss:true,maxHp:250+stage*50,hp:250+stage*50,
                   patternTimer:0});
     phase="boss";
@@ -288,10 +300,38 @@ function update(){
         e.x+=e.vx; e.y+=e.vy;
         if(e.x<0||e.x+e.w>W) e.vx*=-1;
         if(e.y<0||e.y+e.h>H) e.vy*=-1;
+
+        // inimigos atiram
+        if(e.shootInterval>0){
+            e.shootTimer=(e.shootTimer||0)+1;
+            if(e.shootTimer>=e.shootInterval){
+                shootEnemy(e);
+                e.shootTimer=0;
+            }
+        }
+
+        // boss atira em padrões
+        if(e.isBoss){
+            e.patternTimer=(e.patternTimer||0)+1;
+            if(e.patternTimer%50===0){
+                for(let angle=0;angle<360;angle+=30){
+                    let rad=angle*Math.PI/180;
+                    let tx=e.x+e.w/2 + Math.cos(rad)*100;
+                    let ty=e.y+e.h/2 + Math.sin(rad)*100;
+                    enemyBullets.push(new Bullet(e.x+e.w/2,e.y+e.h/2,tx,ty,4,"#f4f"));
+                }
+            }
+        }
     });
 
     updateBullets(playerBullets,true);
     updateBullets(enemyBullets,false);
+}
+
+function shootEnemy(e){
+    let tx=player.x+PLAYER_SIZE/2;
+    let ty=player.y+PLAYER_SIZE/2;
+    enemyBullets.push(new Bullet(e.x+e.w/2,e.y+e.h/2,tx,ty,4,"#4af"));
 }
 
 function updateBullets(arr,isPlayer){
@@ -299,15 +339,14 @@ function updateBullets(arr,isPlayer){
         let b=arr[i]; b.update();
         if(b.off()){arr.splice(i,1); continue;}
         if(!isPlayer){
-            let d=Math.hypot(b.x-(player.x+PLAYER_SIZE/2), b.y-(player.y+PLAYER_SIZE/2));
-            if(d<14){ arr.splice(i,1); lives--; if(lives<=0) gameOver(); specialBar=Math.min(maxSpecial,specialBar+1); }
-        }else{
+            let d=Math.hypot(b.x-(player.x+PLAYER_SIZE/2),b.y-(player.y+PLAYER_SIZE/2));
+            if(d<14){ arr.splice(i,1); lives--; if(lives<=0) gameOver(); specialBar=Math.min(maxSpecial,specialBar+1);}
+        } else{
             for(let j=enemies.length-1;j>=0;j--){
                 let e=enemies[j];
-                let dx = (e.x+e.w/2)-b.x;
-                let dy = (e.y+e.h/2)-b.y;
-                let d=Math.hypot(dx,dy);
-                if(d<18){ arr.splice(i,1); hitEnemy(j); break; }
+                let dx=(e.x+e.w/2)-b.x;
+                let dy=(e.y+e.h/2)-b.y;
+                if(Math.hypot(dx,dy)<18){ arr.splice(i,1); hitEnemy(j); break; }
             }
         }
     }
