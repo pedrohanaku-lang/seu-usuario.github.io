@@ -1,140 +1,135 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Time Zueira RPG</title>
+    <title>TZ RPG - Estável</title>
     <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
 </head>
 <body style="margin:0; background:#000;">
 <script>
-// 1. Inicialização direta
-const k = kaboom({
-    background: [10, 10, 20],
-    scale: 2
+// 1. Inicialização
+kaboom({
+    background: [5, 5, 10],
+    scale: 2,
+    debug: true // Ativa modo de erro na tela para sabermos o que houve
 })
 
-// 2. Carregar Sprites (Nomes fixos para evitar erro de referência)
+// 2. Carregamento com tratamento de erro
 loadSprite("hero", "_Hugkw.gif")
 loadSprite("mestre", "XSuwrQ.gif")
 loadSprite("ninja", "Ru5PS2.gif")
 loadSprite("inimigo", "sRNxiP.gif")
 loadSprite("logo", "image_da46a4.png")
 
-scene("main", () => {
+// Essa função "wait" garante que o motor gráfico processe as imagens
+wait(0.1, () => {
 
-    // Jogador
-    const player = add([
-        sprite("hero"),
-        pos(100, 100),
-        area(),
-        body(),
-        anchor("center"),
-        { 
-            arma: "fraca",
-            speed: 160 
-        }
-    ])
+    scene("main", () => {
+        // Criar o Player apenas se o sprite existir
+        const player = add([
+            sprite("hero"),
+            pos(80, 80),
+            area(),
+            body(),
+            anchor("center"),
+            { 
+                armaForte: false,
+                speed: 150 
+            }
+        ])
 
-    // Visual da Espada (Simples, anexada ao player)
-    const sword = player.add([
-        rect(5, 20),
-        pos(15, 0),
-        color(100, 100, 100),
-        anchor("bot"),
-        rotate(0)
-    ])
+        // NPCs
+        const mestre = add([
+            sprite("mestre"),
+            pos(250, 100),
+            area(),
+            anchor("center"),
+            "npc"
+        ])
 
-    // --- NPCs e Inimigos ---
-    
-    // Mestre que dá a arma
-    add([
-        sprite("mestre"),
-        pos(300, 100),
-        area(),
-        "npc_mestre"
-    ])
+        const boss = add([
+            sprite("inimigo"),
+            pos(300, 250),
+            area(),
+            health(30),
+            anchor("center"),
+            "enemy"
+        ])
 
-    // Inimigo
-    const boss = add([
-        sprite("inimigo"),
-        pos(400, 300),
-        area(),
-        health(50),
-        "enemy"
-    ])
-
-    // --- Lógica de Combate ---
-    
-    onKeyPress("space", () => {
-        // Animação da espada
-        tween(0, 90, 0.1, (v) => sword.angle = v, easings.easeOutQuad)
-        wait(0.1, () => sword.angle = 0)
-
-        // Dano
-        if (player.arma === "forte") {
-            const targets = get("enemy")
-            targets.forEach(t => {
-                if (player.pos.dist(t.pos) < 60) {
-                    t.hurt(10)
-                    shake(5)
-                }
-            })
-        } else {
-            add([
-                text("Dano 0 - Fale com o mestre", { size: 12 }),
-                pos(player.pos),
-                lifespan(0.5),
-                move(UP, 50)
-            ])
-        }
-    })
-
-    // --- Interação ---
-    
-    onKeyPress("e", () => {
-        if (player.pos.dist(get("npc_mestre")[0].pos) < 50) {
-            player.arma = "forte"
-            sword.color = rgb(0, 255, 255) // Espada brilha
-            add([
-                text("VOCÊ RECEBEU A LÂMINA VMZ!", { size: 16 }),
-                pos(center()),
+        // --- SISTEMA DE COMBATE (MOVESET) ---
+        onKeyPress("space", () => {
+            // Efeito visual do ataque
+            const atq = add([
+                rect(player.armaForte ? 60 : 20, 2),
+                pos(player.pos.add(player.flipX ? -30 : 30, 0)),
                 anchor("center"),
-                lifespan(2)
+                color(player.armaForte ? rgb(0, 255, 255) : rgb(150, 150, 150)),
+                lifespan(0.1),
             ])
-        }
+
+            // Lógica de Dano
+            if (player.armaForte) {
+                if (player.pos.dist(boss.pos) < 70) {
+                    boss.hurt(10)
+                    shake(10)
+                    add([
+                        text("HIT!", {size: 10}),
+                        pos(boss.pos),
+                        lifespan(0.3),
+                        move(UP, 100)
+                    ])
+                }
+            } else {
+                // Se estiver com graveto, não dá dano
+                shake(1)
+            }
+        })
+
+        // --- INTERAÇÃO ---
+        onKeyPress("e", () => {
+            if (player.pos.dist(mestre.pos) < 50) {
+                player.armaForte = true
+                add([
+                    text("LÂMINA VMZ EQUIPADA!", { size: 12 }),
+                    pos(center()),
+                    anchor("center"),
+                    lifespan(2),
+                    fixed()
+                ])
+            }
+        })
+
+        // --- CONTROLES ---
+        onKeyDown("left", () => { player.move(-player.speed, 0); player.flipX = true })
+        onKeyDown("right", () => { player.move(player.speed, 0); player.flipX = false })
+        onKeyDown("up", () => player.move(0, -player.speed))
+        onKeyDown("down", () => player.move(0, player.speed))
+
+        // Câmera
+        player.onUpdate(() => {
+            camPos(player.pos)
+            if (boss.hp() <= 0) {
+                destroy(boss)
+                go("win")
+            }
+        })
     })
 
-    // --- Controles ---
-    
-    onKeyDown("left", () => { player.move(-player.speed, 0); player.flipX = true })
-    onKeyDown("right", () => { player.move(player.speed, 0); player.flipX = false })
-    onKeyDown("up", () => { player.move(0, -player.speed) })
-    onKeyDown("down", () => { player.move(0, player.speed) })
-
-    // Câmera segue o herói
-    onUpdate(() => {
-        camPos(player.pos)
-    })
-
-    // Vitória
-    boss.onDeath(() => {
-        destroy(boss)
+    scene("win", () => {
         add([
             sprite("logo"),
             pos(center()),
             anchor("center"),
-            fixed()
+            scale(0.5)
+        ])
+        add([
+            text("BOSS DERROTADO - TIME ZUEIRA", { size: 14 }),
+            pos(center().add(0, 100)),
+            anchor("center")
         ])
     })
 
-    // HUD Fixo
-    add([
-        text("Aperte E perto do Mestre | ESPAÇO para atacar", { size: 10 }),
-        pos(10, 10),
-        fixed()
-    ])
+    go("main")
 })
-
-go("main")
 </script>
 </body>
 </html>
