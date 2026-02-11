@@ -1,198 +1,184 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Time Zueira - Native Engine</title>
+    <title>TIME ZUEIRA - SAMURAI EDITION</title>
     <style>
-        body { margin: 0; background: #050510; color: #0f0; font-family: 'Courier New', monospace; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { border: 2px solid #333; box-shadow: 0 0 20px rgba(0,255,255,0.2); background: #000; }
-        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; }
+        #overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #0ff; }
+        button { background: #0ff; color: #000; border: none; padding: 20px 40px; font-weight: bold; cursor: pointer; border-radius: 5px; }
+        #debug { position: absolute; bottom: 10; left: 10; color: red; font-size: 10px; }
     </style>
 </head>
 <body>
 
-<div id="ui">
-    <div id="weaponDisp">ARMA: GRAVETO PODRE</div>
-    <div id="hpDisp">BOSS HP: 100</div>
-    <div style="font-size: 12px; margin-top: 10px;">[WASD] Mover | [SHIFT] Dash | [ESPAÇO] Ataque | [E] Interagir</div>
+<div id="overlay">
+    <h1 style="text-shadow: 0 0 10px #0ff;">TIME ZUEIRA RPG</h1>
+    <p>[W,A,S,D] Move | [SHIFT] Dash | [ESPAÇO] Ataca | [E] Fala</p>
+    <button id="startBtn">INICIALIZAR SISTEMA</button>
 </div>
+<div id="debug"></div>
 
-<canvas id="g"></canvas>
+<canvas id="game"></canvas>
 
 <script>
-const cvs = document.getElementById("g");
-const ctx = cvs.getContext("2d");
-cvs.width = 800; cvs.height = 600;
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const startBtn = document.getElementById("startBtn");
+const overlay = document.getElementById("overlay");
+const debug = document.getElementById("debug");
 
-// --- CARREGAMENTO DE IMAGENS ---
-function loadImg(src) {
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// --- SISTEMA DE CARREGAMENTO SEGURO ---
+const sprites = {};
+const assets = {
+    hero: "_Hugkw.gif",
+    master: "XSuwrQ.gif",
+    ninja: "Ru5PS2.gif",
+    mago: "KFBLh9.gif",
+    enemy: "sRNxiP.gif",
+    logo: "image_da46a4.png"
+};
+
+let loadedCount = 0;
+const totalAssets = Object.keys(assets).length;
+
+Object.entries(assets).forEach(([key, src]) => {
     const img = new Image();
     img.src = src;
-    return img;
-}
-
-const sprites = {
-    hero: loadImg("_Hugkw.gif"),
-    master: loadImg("XSuwrQ.gif"),
-    ninja: loadImg("Ru5PS2.gif"),
-    wizard: loadImg("KFBLh9.gif"),
-    enemy: loadImg("sRNxiP.gif"),
-    logo: loadImg("image_da46a4.png")
-};
+    img.onload = () => { loadedCount++; sprites[key] = img; };
+    img.onerror = () => { 
+        loadedCount++; 
+        debug.innerHTML += `Erro ao carregar: ${src}<br>`;
+        // Cria um fallback (quadrado colorido) se a imagem sumir
+        const canvasFallback = document.createElement("canvas");
+        canvasFallback.width = 32; canvasFallback.height = 32;
+        const ctxF = canvasFallback.getContext("2d");
+        ctxF.fillStyle = key === 'enemy' ? 'red' : 'blue';
+        ctxF.fillRect(0,0,32,32);
+        sprites[key] = canvasFallback;
+    };
+});
 
 // --- ESTADO DO JOGO ---
-const player = {
-    x: 100, y: 300, w: 40, h: 40,
-    speed: 4, dashing: 0, 
-    weapon: 0, // 0: Graveto, 1: Lâmina VMZ
-    flip: false
+let gameStarted = false;
+const p = { 
+    x: 200, y: 300, w: 50, h: 50, 
+    speed: 5, dash: 0, 
+    weaponLvl: 0, // 0: Fraco, 1: VMZ
+    dir: 1, 
+    isAttacking: 0 
 };
 
-const boss = { x: 600, y: 300, w: 60, h: 60, hp: 100, active: true };
+const boss = { x: 700, y: 300, hp: 100, alive: true, size: 80 };
+const keys = {};
 
+// NPCs com posições fixas
 const npcs = [
-    { x: 300, y: 150, sprite: 'master', msg: "Pegue a Lâmina VMZ com [E]!", id: 'mestre' },
-    { x: 200, y: 450, sprite: 'ninja', msg: "O Time Zueira não perdoa...", id: 'ninja' },
-    { x: 500, y: 100, sprite: 'wizard', msg: "Cuidado com o Samurai Vermelho!", id: 'mago' }
+    { x: 400, y: 150, id: 'mestre', color: '#ff0', msg: "Aperte [E] para a Lâmina VMZ!" },
+    { x: 150, y: 500, id: 'ninja', color: '#0f0', msg: "O Dash [SHIFT] te deixa invencível." }
 ];
 
-const keys = {};
-window.onkeydown = e => keys[e.key.toLowerCase()] = true;
-window.onkeyup = e => keys[e.key.toLowerCase()] = false;
+// --- CONTROLES ---
+window.onkeydown = (e) => keys[e.code] = true;
+window.onkeyup = (e) => keys[e.code] = false;
 
-let particles = [];
-let msgActive = "";
-
-// --- LÓGICA ---
-function update() {
-    // Movimentação & Dash
-    let curSpeed = player.speed;
-    if (keys['shift'] && player.dashing <= 0) player.dashing = 20;
-    if (player.dashing > 0) {
-        curSpeed = 15;
-        player.dashing--;
-        // Efeito de rastro
-        particles.push({x: player.x, y: player.y, l: 10, c: 'rgba(0,255,255,0.3)'});
-    }
-
-    if (keys['w']) player.y -= curSpeed;
-    if (keys['s']) player.y += curSpeed;
-    if (keys['a']) { player.x -= curSpeed; player.flip = true; }
-    if (keys['d']) { player.x += curSpeed; player.flip = false; }
-
-    // Ataque (Espaço)
-    if (keys[' ']) {
-        keys[' '] = false; // Previne spam
-        performAttack();
-    }
-
-    // Interação (E)
-    msgActive = "";
-    npcs.forEach(n => {
-        let d = Math.hypot(player.x - n.x, player.y - n.y);
-        if (d < 60) {
-            msgActive = n.msg;
-            if (keys['e'] && n.id === 'mestre') {
-                player.weapon = 1;
-                document.getElementById("weaponDisp").innerText = "ARMA: LÂMINA VMZ (ESPECTRAL)";
-                document.getElementById("weaponDisp").style.color = "#0ff";
-            }
-        }
-    });
-
-    // Boss AI (Segue o player de longe)
-    if (boss.active) {
-        let dx = player.x - boss.x;
-        let dy = player.y - boss.y;
-        let dist = Math.hypot(dx, dy);
-        if (dist < 250 && dist > 40) {
-            boss.x += dx/dist * 2;
-            boss.y += dy/dist * 2;
-        }
-    }
-
-    particles.forEach((p, i) => { p.l--; if(p.l<=0) particles.splice(i,1); });
-}
+startBtn.onclick = () => {
+    gameStarted = true;
+    overlay.style.display = "none";
+    loop();
+};
 
 function performAttack() {
-    let range = player.weapon === 1 ? 80 : 30;
-    let damage = player.weapon === 1 ? 15 : 0;
-    
-    // Animação de corte (partículas)
-    for(let i=0; i<10; i++) {
-        particles.push({
-            x: player.x + (player.flip ? -range : range),
-            y: player.y + (Math.random()*40-20),
-            l: 15,
-            c: player.weapon === 1 ? '#0ff' : '#640'
-        });
-    }
+    p.isAttacking = 10;
+    const range = p.weaponLvl === 1 ? 120 : 40;
+    const damage = p.weaponLvl === 1 ? 10 : 0;
 
-    if (boss.active && Math.hypot(player.x - boss.x, player.y - boss.y) < range + 20) {
-        boss.hp -= damage;
-        document.getElementById("hpDisp").innerText = "BOSS HP: " + Math.max(0, boss.hp);
-        if (boss.hp <= 0) boss.active = false;
+    if (boss.alive) {
+        const dx = (p.x + (p.dir * range)) - boss.x;
+        const dy = p.y - boss.y;
+        if (Math.hypot(dx, dy) < 60) {
+            boss.hp -= damage;
+            if (boss.hp <= 0) boss.alive = false;
+        }
     }
 }
 
-// --- RENDERIZAÇÃO ---
+function update() {
+    // Dash e Movimento
+    let s = p.speed;
+    if (keys['ShiftLeft'] && p.dash <= 0) p.dash = 15;
+    if (p.dash > 0) { s = 20; p.dash--; }
+
+    if (keys['KeyW']) p.y -= s;
+    if (keys['KeyS']) p.y += s;
+    if (keys['KeyA']) { p.x -= s; p.dir = -1; }
+    if (keys['KeyD']) { p.x += s; p.dir = 1; }
+
+    if (keys['Space'] && p.isAttacking <= 0) { performAttack(); keys['Space'] = false; }
+    if (p.isAttacking > 0) p.isAttacking--;
+
+    // Interação com Mestre
+    if (keys['KeyE'] && Math.hypot(p.x - 400, p.y - 150) < 60) {
+        p.weaponLvl = 1;
+    }
+}
+
 function draw() {
-    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    ctx.fillStyle = "#000510";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // NPCs
+    // Desenha NPCs
     npcs.forEach(n => {
-        ctx.drawImage(sprites[n.sprite], n.x - 20, n.y - 20, 40, 40);
-        ctx.fillStyle = "white";
-        ctx.font = "10px Arial";
-        ctx.fillText(n.id.toUpperCase(), n.x - 15, n.y - 30);
-    });
-
-    // Partículas (Rastro/Ataque)
-    particles.forEach(p => {
-        ctx.fillStyle = p.c;
-        ctx.fillRect(p.x, p.y, 4, 4);
+        if (sprites.master && n.id === 'mestre') ctx.drawImage(sprites.master, n.x-25, n.y-25, 50, 50);
+        else if (sprites.ninja) ctx.drawImage(sprites.ninja, n.x-25, n.y-25, 50, 50);
+        
+        if (Math.hypot(p.x - n.x, p.y - n.y) < 80) {
+            ctx.fillStyle = "white";
+            ctx.fillText(n.msg, n.x - 50, n.y - 40);
+        }
     });
 
     // Boss
-    if (boss.active) {
-        ctx.drawImage(sprites.enemy, boss.x - 30, boss.y - 30, 60, 60);
+    if (boss.alive) {
+        if (sprites.enemy) ctx.drawImage(sprites.enemy, boss.x-40, boss.y-40, 80, 80);
         ctx.fillStyle = "red";
-        ctx.fillRect(boss.x - 30, boss.y - 45, (boss.hp/100)*60, 5);
-    } else {
-        ctx.drawImage(sprites.logo, 400 - 100, 300 - 100, 200, 200);
-        ctx.fillStyle = "#0ff";
-        ctx.font = "20px Courier New";
-        ctx.fillText("TIME ZUEIRA VENCEU", 300, 550);
+        ctx.fillRect(boss.x-40, boss.y-60, (boss.hp/100)*80, 5);
+    } else if (sprites.logo) {
+        ctx.drawImage(sprites.logo, canvas.width/2 - 100, canvas.height/2 - 100, 200, 200);
     }
 
-    // Player
+    // Player e Espada
     ctx.save();
-    if (player.flip) {
-        ctx.translate(player.x, player.y);
-        ctx.scale(-1, 1);
-        ctx.drawImage(sprites.hero, -20, -20, 40, 40);
-    } else {
-        ctx.drawImage(sprites.hero, player.x - 20, player.y - 20, 40, 40);
+    ctx.translate(p.x, p.y);
+    if (p.dir === -1) ctx.scale(-1, 1);
+    
+    // Desenha Heroi
+    if (sprites.hero) ctx.drawImage(sprites.hero, -25, -25, 50, 50);
+
+    // Efeito Espada
+    if (p.isAttacking > 0) {
+        ctx.strokeStyle = p.weaponLvl === 1 ? "#0ff" : "#640";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(20, 0, p.weaponLvl === 1 ? 50 : 20, -1, 1);
+        ctx.stroke();
     }
     ctx.restore();
 
-    // Balão de fala
-    if (msgActive) {
-        ctx.fillStyle = "rgba(0,0,0,0.8)";
-        ctx.fillRect(player.x - 50, player.y - 70, 150, 25);
-        ctx.fillStyle = "#fff";
-        ctx.font = "12px Arial";
-        ctx.fillText(msgActive, player.x - 45, player.y - 53);
-    }
-
-    requestAnimationFrame(() => {
-        update();
-        draw();
-    });
+    // UI
+    ctx.fillStyle = "#0ff";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText(`ARMA: ${p.weaponLvl === 1 ? "LAMINA VMZ" : "GRAVETO"}`, 20, 30);
 }
 
-// Início imediato
-draw();
+function loop() {
+    update();
+    draw();
+    if (gameStarted) requestAnimationFrame(loop);
+}
 </script>
 </body>
 </html>
