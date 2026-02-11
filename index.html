@@ -1,407 +1,320 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Samurai Roguelike Drag Sword</title>
-<style>
-body{margin:0;background:#111;display:flex;justify-content:center;align-items:center;height:100vh;color:#0f0;font-family:Arial, sans-serif;}
-canvas{background:#222;border:3px solid #0f0;display:none;position:absolute;z-index:1;}
-#menu,#creditos,#cartas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#000;border:2px solid #0f0;padding:25px;text-align:center;z-index:10;}
-#cartas{display:none;gap:15px;flex-wrap:wrap;}
-.cartao{width:160px;border:2px solid #0f0;padding:15px;background:#111;cursor:pointer;}
-.cartao:hover{background:#0f0;color:#000;}
-button{padding:12px 28px;font-size:18px;cursor:pointer;margin:10px;border:none;background:#0f0;color:#000;}
-</style>
-</head>
-<body>
+#! python3
+# Free_Games.py - A script that Windows Task Scheduler can run to go and get me them sweet sweet free games I'll probably never play
 
-<canvas id="c" width="800" height="600"></canvas>
+from os import getenv
+from dotenv import load_dotenv
+load_dotenv()
 
-<div id="menu">
-    <h1>SAMURAI ROGUELIKE</h1>
-    <button onclick="startGame()">JOGAR</button><br>
-    <button onclick="showCredits()">CRÉDITOS</button>
-</div>
+# Pull credentials from .env, then transpose the matrix.
+# .env variables should be comma-separated if using multiple users.
+a = [getenv("EPIC_EMAIL").split(","), getenv("EPIC_PASSWORD").split(","), getenv("EPIC_TFA_TOKEN").split(",")]
+credentialslist = [[a[j if len(str(j)) > 0 else None][i if len(str(i)) > 0 else None] for j in range(len(a))] for i in range(len(a[0]))]
 
-<div id="creditos" style="display:none">
-    <h2>CRÉDITOS</h2>
-    <p>Scripter: Hanako</p>
-    <p>Design: Barros</p>
-    <button onclick="backMenu()">VOLTAR</button>
-</div>
+# You may desire to replace the user-agent below. You can leave it as is or google 'what is my user agent' and copy that between the single quotes below
+user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36"
 
-<div id="cartas"></div>
+import lxml.html, pyotp, re, sys, time, traceback
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from urllib.parse import quote as uriencode
 
-<script>
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
-const W=800,H=600,PLAYER_SIZE=40;
+# Find the xpath of a given soup object.
+# Full credit goes to ergoithz over at:               https://gist.github.com/ergoithz
+# Here is the link to the function on their GitHub:   https://gist.github.com/ergoithz/6cf043e3fdedd1b94fcf
+def xpath_soup(element):
+    # type: (typing.Union[bs4.element.Tag, bs4.element.NavigableString]) -> str
+    components = []
+    child = element if element.name else element.parent
+    for parent in child.parents:  # type: bs4.element.Tag
+        siblings = parent.find_all(child.name, recursive=False)
+        components.append(
+            child.name if 1 == len(siblings) else '%s[%d]' % (
+                child.name,
+                next(i for i, s in enumerate(siblings, 1) if s is child)
+                )
+            )
+        child = parent
+    components.reverse()
+    return '/%s' % '/'.join(components)
 
-let player, enemies, playerBullets, enemyBullets;
-let keys={}, mouse={x:400,y:300};
-let gameActive=false, showingCards=false, gameOverFlag=false;
-let stage=1, score=0, kills=0;
-let maxLives=5, lives=5;
-let doubleShot=false, swordRange=80, swordCooldown=0, shootCooldown=0;
-let phase="wave"; 
-let weapon="gun"; 
-let swordHits=0;
+# Make a function to actually get the game that we can call later
+def getGame():
+    language = None
+    while not isinstance(language, str):
+        try: 
+            language = re.search(r"/store/(\D+?)/", browser.current_url).group(1)
+        except Exception:
+            pass
+    if language != "en-US":
+        print("Product page loaded in language other than english, reloading as english")
+        browser.get( re.sub(language, "en-US", browser.current_url) )
+    else:
+        browser.get(browser.current_url)
+    wait_until_xpath_visible("//*[@id='siteNav']")
+    time.sleep(1)
+               
+    game_title = browser.title
+    print("Claiming game " + game_title)    
+    
+    wait_until_xpath_clickable_then_click("//*[text() = 'Continue']", 1) # Continue +18 button
 
-// Espada drag
-let swordDrag={active:false,path:[],length:80,damage:1,destroyBulletChance:0.3};
+    if wait_until_xpath_visible("//*[text() = 'Owned']", 1):
+        print("Already owned")
+        return
+    
+    try:
+        if not wait_until_xpath_clickable_then_click("//*[text() = 'Get']"):
+            raise TypeError("Unable to find 'Get' button")
+    except:
+        print("Failed to click on 'Get' button. Using parent element workaround... ", end='')
+        if not wait_until_xpath_clickable_then_click("//*[text() = 'Get']/.."):
+            raise TypeError("Workaround failed")
+        else:
+            print("Worked")
+    if not wait_until_xpath_clickable_then_click("//*[text() = 'Place Order']"):
+        raise TypeError("Unable to find 'Place Order' button")
+        
+    # Wait until redirected to "THANK YOU" page
+    wait_redirect_count = 0
+    has_warned_captcha = False
+    eula_accepted = False
+    print("Waiting for order confirmation")
+    while True:
+        try:
+            if (eula_accepted == False):
+                if wait_until_xpath_visible("//*[text() = 'I Agree']", 1): # EULA prompt
+                    time.sleep(1)
+                    wait_until_xpath_clickable_then_click("//*[text() = 'I Agree']")
+                    print("EULA accepted")
+                    eula_accepted = True
+                    
+            if (wait_redirect_count >= 5) & (has_warned_captcha == False):
+                print("Still waiting - Possible captcha requiring completion")
+                has_warned_captcha = True
+                
+            if wait_until_xpath_visible("//*[contains(text(), 'Thank you for buying') or contains(text(), 'Got Epic Games')]", 1):
+                break
+            
+            time.sleep(1)
+            wait_redirect_count += 1
+        except Exception:
+            pass
+    print("Order confirmed")
 
-// Barra ultimate
-let specialBar=0;
-const maxSpecial=5;
+# Try clicking on a game
+def try_click_game(game):
+    next_button = try_get_carousel_button()
+    for _ in range(60):
+        if wait_until_xpath_clickable_then_click(game["xpath"], 1):
+            # Wait 1 second for the game to become clickable, throw an exception if it doesn't
+            # If the script gets stuck cycling through the carousel, means that the object it wants to click on
+            # is unclickable for some other reason I haven't encountered before           
+            # Exit the loop once the game was clicked
+            return True
+        else:
+            # Click the next button, cycling through the carousel if it can
+            if next_button is not None:
+                print("Cycling through carousel")
+                next_button.click()           
+    return False
 
-// ---------------- MENU ----------------
-function startGame(){
-    document.getElementById("menu").style.display="none";
-    document.getElementById("creditos").style.display="none";
-    canvas.style.display="block";
-    ctx.font="16px Arial";
-    resetRun();
-    gameActive=true;
-}
-function backMenu(){
-    document.getElementById("creditos").style.display="none";
-    document.getElementById("menu").style.display="block";
-    canvas.style.display="none";
-}
-function showCredits(){
-    document.getElementById("menu").style.display="none";
-    document.getElementById("creditos").style.display="block";
-}
+# Check for, and close, the cookies banner
+def accept_cookies():
+    print("Accepting cookies")
+    is_displayed_count = 0
+    has_warned_cookies = False
+    cookies_button = wait_until_xpath_clickable_then_click("//*[@id='onetrust-accept-btn-handler']")
+    if cookies_button:
+        while cookies_button.is_displayed(): # Wait until cookie banner disappears
+            if (is_displayed_count >= 5) & (has_warned_cookies == False):
+                print("Waiting - Cookies banner is still visible and obscuring games elements")
+            is_displayed_count += 1
+            time.sleep(1)
+        print("Successfully accepted cookies")
+    else:
+        print("Cookies banner not found, probably accepted already")
 
-// ---------------- RESET ----------------
-function resetRun(){
-    player={x:W/2,y:H/2,speed:5};
-    enemies=[]; playerBullets=[]; enemyBullets=[];
-    stage=1; score=0; kills=0;
-    maxLives=5; lives=5;
-    doubleShot=false; swordRange=80;
-    swordCooldown=0; shootCooldown=0;
-    phase="wave"; gameOverFlag=false; showingCards=false; swordHits=0;
-    specialBar=0;
-    spawnWave();
-}
+# Get carousel next button
+def try_get_carousel_button():
+    next_button_tag = wait_until_xpath_visible("//*[@aria-label='Next item']")
+    if next_button_tag:
+        return next_button_tag
+    else:
+        print("Carousel 'Next item' button not found")
+        return None
 
-// ---------------- INPUT ----------------
-window.addEventListener("keydown",e=>{
-    keys[e.key.toLowerCase()]=true;
-    if(e.key.toLowerCase()==="r"&&gameOverFlag){
-        canvas.style.display="none";
-        document.getElementById("menu").style.display="block";
-    }
-    if(e.key.toLowerCase()==="e") weapon = (weapon==="gun")?"sword":"gun";
-    if(e.key.toLowerCase()==="g" && specialBar >= maxSpecial) activateUltimate();
-});
-window.addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;});
-canvas.oncontextmenu=e=>e.preventDefault();
-canvas.addEventListener("mousemove",e=>{
-    const r = canvas.getBoundingClientRect();
-    mouse.x = e.clientX - r.left;
-    mouse.y = e.clientY - r.top;
-});
-canvas.addEventListener("mousedown",e=>{
-    if(e.button===2 && gameActive && weapon==="sword") swordDrag.active=true;
-    if(e.button===2 && gameActive && weapon==="gun") shoot();
-});
-canvas.addEventListener("mouseup",e=>{
-    if(e.button===2) swordDrag.active=false;
-});
+def start_firefox_browser(user_agent):
+    profile = webdriver.FirefoxProfile()
+    profile.set_preference("general.useragent.override", user_agent) # We will use the user-agent to trick the website into thinking we are a real person. This usually subverts most basic security
 
-// ---------------- CLASSES ----------------
-class Bullet{
-    constructor(x,y,tx,ty,s,c){
-        this.x=x; this.y=y;
-        let dx=tx-x, dy=ty-y;
-        let d=Math.hypot(dx,dy)||1;
-        this.vx = dx/d*s; this.vy = dy/d*s; this.c=c;
-    }
-    update(){this.x+=this.vx; this.y+=this.vy;}
-    draw(){ctx.fillStyle=this.c; ctx.fillRect(this.x-4,this.y-4,8,8);}
-    off(){return this.x<-20||this.x>W+20||this.y<-20||this.y>H+20;}
-}
+    browser = webdriver.Firefox(profile) # Setup the browser object to use our modified profile
+    browser.maximize_window()
+    return browser
 
-// ---------------- PLAYER ----------------
-function drawPlayer(){
-    ctx.fillStyle="#0f0";
-    ctx.fillRect(player.x,player.y,PLAYER_SIZE,PLAYER_SIZE);
-    ctx.fillStyle="#000";
-    ctx.fillRect(player.x+10,player.y+10,5,5);
-    ctx.fillRect(player.x+25,player.y+10,5,5);
-}
+def log_into_account(email, password, two_fa_key=None):
+    # Loading login page and waiting until ready
+    print("Logging into account " + email)
+    browser.get(epic_login_url + "?redirectUrl=" + uriencode(epic_store_url))
+    if not wait_until_xpath_presence_located("//*[@id='email']"):
+        raise TypeError("Unable to find email input field")
 
-// ---------------- ESPADA DRAG ----------------
-function updateSwordDrag(){
-    if(!swordDrag.active) return;
-    // adiciona posição atual do mouse ao path
-    swordDrag.path.push({x:mouse.x,y:mouse.y});
-    // limita o comprimento do path
-    if(swordDrag.path.length>30) swordDrag.path.shift();
+    # Logging in into the account
+    browser.find_element_by_id('email').send_keys(email)
+    browser.find_element_by_id('password').send_keys(password)
+    if not wait_until_xpath_clickable_then_click("//*[@id='sign-in']"):
+        raise TypeError("Unable to find sign-in button")
+    # 2FA
+    if (two_fa_key != None):
+        wait_located_count = 0
+        has_warned_captcha = False
+        while not wait_until_xpath_presence_located("//*[@id='code']", 1):
+            if (wait_located_count >= 3) & (has_warned_captcha == False):
+                print("Waiting - Cannot find 2FA input field - Possible captcha requiring completion")
+                has_warned_captcha = True
+            wait_located_count += 1
+        browser.find_element_by_id('code').send_keys(Keys.HOME) # Make sure to be at beginning of field
+        browser.find_element_by_id('code').send_keys(pyotp.TOTP(two_fa_key).now()) # 2FA login code
+        if not wait_until_xpath_clickable_then_click("//*[@id='continue']"):
+            raise TypeError("Unable to find 2FA continue button")
 
-    // verifica colisão com inimigos
-    enemies.forEach((e,i)=>{
-        swordDrag.path.forEach(p=>{
-            let closestX = Math.max(e.x, Math.min(p.x, e.x+e.w));
-            let closestY = Math.max(e.y, Math.min(p.y, e.y+e.h));
-            let dx = closestX-p.x;
-            let dy = closestY-p.y;
-            if(Math.hypot(dx,dy)<swordDrag.length){
-                hitEnemy(i);
-                specialBar=Math.min(maxSpecial,specialBar+0.1);
-            }
-        });
-    });
+    # Waiting until redirected to store - captcha detection workaround
+    wait_redirect_count = 0
+    has_warned_captcha = False
+    print("Waiting to be automatically redirected to store page")
+    while not re.search(epic_store_url, browser.current_url):
+        if (wait_redirect_count >= 5) & (has_warned_captcha == False):
+            print("Still waiting - Possible captcha requiring completion")
+            has_warned_captcha = True
+        time.sleep(1)
+        wait_redirect_count += 1
+    print("Successfully logged in " + email)
+    browser.get(epic_store_url) # So it automatically waits until page is loaded
+    wait_until_xpath_visible("//*[@id='siteNav']")
+    time.sleep(1)
+    
+def log_out():    
+    browser.get(epic_logout_url + "?redirectUrl=" + uriencode(epic_store_url))
+    wait_redirect_count = 0
+    has_warned_logout = False
+    while not re.search(epic_store_url, browser.current_url):
+        if (wait_redirect_count >= 5) & (has_warned_logout == False):
+            print("Still waiting to be redirected to store page after logout")
+            has_warned_logout = True
+        time.sleep(1)
+        wait_redirect_count += 1
+    print("Successfully logged out\n")
 
-    // destrói balas inimigas
-    for(let i=enemyBullets.length-1;i>=0;i--){
-        swordDrag.path.forEach(p=>{
-            let b=enemyBullets[i];
-            if(Math.hypot(b.x-p.x,b.y-p.y)<swordDrag.length && Math.random()<swordDrag.destroyBulletChance){
-                enemyBullets.splice(i,1);
-                specialBar=Math.min(maxSpecial,specialBar+0.2);
-            }
-        });
-    }
-}
+def get_free_games_list():   
+    if not re.search(epic_store_url, browser.current_url):
+        browser.get(epic_store_url)
+        wait_until_xpath_visible("//*[@id='siteNav']")
+        time.sleep(1)
+    
+    free_now_xpath_str = "//*[translate(text(),'FREE NOW','free now') = 'free now']"
+    get_it_free_xpath_str = "//*[translate(text(),'GET IT FREE','get it free') = 'get it free']"           
+                
+    free_now_elements = browser.find_elements_by_xpath(free_now_xpath_str)
+    get_it_free_element = browser.find_elements_by_xpath(get_it_free_xpath_str)
+    if len(free_now_elements) == 0 & len(get_it_free_element) == 0:
+        raise TypeError("Free games list is empty")
+    
+    free_games = []
+    for index, element in enumerate(free_now_elements):
+        num = "[" + str(index+1) + "]"
+        free_games.append({"xpath": "(" + free_now_xpath_str + ")" + num, "element": element}) # Literally "(//*[translate(text(),'FREE NOW','free now') = 'free now'])[1]"
+    for index, element in enumerate(get_it_free_element):
+        num = "[" + str(index+1) + "]"
+        free_games.append({"xpath": "(" + get_it_free_xpath_str + ")" + num, "element": element}) # Literally "(//*[translate(text(),'GET IT FREE','get it free') = 'get it free'])[1]"
+    
+    return free_games
 
-function drawSwordDrag(){
-    if(swordDrag.path.length<2) return;
-    ctx.strokeStyle="#ff0";
-    ctx.lineWidth=4;
-    ctx.beginPath();
-    ctx.moveTo(swordDrag.path[0].x,swordDrag.path[0].y);
-    for(let i=1;i<swordDrag.path.length;i++){
-        ctx.lineTo(swordDrag.path[i].x,swordDrag.path[i].y);
-    }
-    ctx.stroke();
-}
+def claim_free_games():
+    games = get_free_games_list()
+    games_count = len(games)
+    print("Found " + str(games_count) + " free games")
+    for index, game in enumerate(games): # Go thru each game we found and get it!
+        if not try_click_game(game): # Try to click on the current game
+            try:
+                game.click() # Try to click on the game one last time
+            except:
+                game_claim_errors_count += 1
+                print("Game at index " + str(index) + " was skipped due to being unable to click on it") # If it didn't work, skip to the next game
+                continue
+        getGame()
+        if (index+1 < games_count):
+            browser.get(epic_store_url) # Go back to the store page to get the other game
+            wait_until_xpath_visible("//*[@id='siteNav']")
+            time.sleep(1)
+            games[index+1]["element"] = browser.find_element_by_xpath(game["xpath"]) # Selenium complains this object no longer exists, so we need to re-get it so it doesn't explode
+            
 
-// ---------------- ULTIMATE ----------------
-function activateUltimate(){
-    // dano em todos inimigos
-    for(let i=enemies.length-1;i>=0;i--) hitEnemy(i);
-    enemyBullets=[]; // destrói todas as balas
-    specialBar=0;
-    // efeito visual
-    ctx.strokeStyle="#ff0";
-    ctx.lineWidth=12;
-    ctx.beginPath();
-    ctx.moveTo(0,H/2);
-    ctx.lineTo(W,H/2);
-    ctx.stroke();
-}
+def wait_until_xpath_presence_located(xstr, wait_duration=10):
+    try:
+        element = WebDriverWait(browser, wait_duration).until(EC.presence_of_element_located((By.XPATH, xstr)))
+        return element
+    except TimeoutException:
+        return False
 
-// ---------------- TIROS ----------------
-function shoot(){
-    if(shootCooldown>0) return;
-    fireBullet();
-    if(doubleShot) setTimeout(fireBullet,60);
-    shootCooldown=15;
-}
-function fireBullet(){
-    playerBullets.push(new Bullet(player.x+PLAYER_SIZE/2,player.y+PLAYER_SIZE/2,mouse.x,mouse.y,8,"#f44"));
-}
+def wait_until_xpath_clickable_then_click(xstr, wait_duration=10):
+    try:
+        element = WebDriverWait(browser, wait_duration).until(EC.element_to_be_clickable((By.XPATH, xstr)))
+        time.sleep(0.5) # Small wait to avoid potential issues
+        browser.find_element_by_xpath(xstr).click()
+        return element
+    except TimeoutException:
+        return False
+    
+def wait_until_xpath_clickable(xstr, wait_duration=10):
+    try:
+        element = WebDriverWait(browser, wait_duration).until(EC.element_to_be_clickable((By.XPATH, xstr)))
+        return element
+    except TimeoutException:
+        return False
+    
+def wait_until_xpath_visible(xstr, wait_duration=10):
+    start_time = time.time()
+    while True:
+        try:
+            element = WebDriverWait(browser, wait_duration).until(EC.presence_of_element_located((By.XPATH, xstr)))
+            if element.is_displayed():
+                return element
+            if ( (time.time() - start_time) > wait_duration ):
+                return False
+            time.sleep(1)
+            
+        except TimeoutException:
+            return False
+    
+def show_exception_and_exit(exc_type, exc_value, tb):
+    traceback.print_exception(exc_type, exc_value, tb)
+    input("Press key to exit.")
+    browser.quit()
+    sys.exit(-1)
+   
+##### MAIN #####
+sys.excepthook = show_exception_and_exit
+game_claim_errors_count = 0
 
-// ---------------- SPAWN ----------------
-function spawnEnemy(type="normal"){
-    let enemy={x:Math.random()*(W-28),y:Math.random()*(H-28),w:28,h:28,
-               vx:Math.random()*1.5-0.75,vy:Math.random()*1.5-0.75,
-               shootTimer:0, shootInterval:type==="normal"?100:50,
-               hp:type==="normal"?3:5,type:type};
-    enemies.push(enemy);
-}
+epic_home_url = "https://www.epicgames.com/site/en-US/home"
+epic_store_url = "https://www.epicgames.com/store/en-US"
+epic_login_url = "https://www.epicgames.com/id/login/epic"
+epic_logout_url = "https://www.epicgames.com/id/logout"
 
-function spawnBoss(){
-    enemies.push({x:W/2-100,y:40,w:200,h:200,vx:1.2,vy:1.2,
-                  shootTimer:0, shootInterval:0,
-                  isBoss:true,maxHp:250+stage*50,hp:250+stage*50,
-                  patternTimer:0});
-    phase="boss";
-}
+browser = start_firefox_browser(user_agent)
 
-function spawnWave(){
-    phase="wave";
-    for(let i=0;i<2+stage;i++){
-        let t=Math.random()<0.5?"normal":"shooter";
-        spawnEnemy(t);
-    }
-}
+for credentials in credentialslist:
+    print(credentials)
+    log_into_account(*credentials)
+    accept_cookies()
+    claim_free_games()
+    if game_claim_errors_count > 0:
+        print("/!\\ Some games failed to be claimed /!\\")
+    log_out()
 
-// ---------------- HIT / KILL ----------------
-function hitEnemy(i){
-    let e=enemies[i];
-    e.hp--;
-    if(e.hp<=0) killEnemy(i);
-}
+browser.quit()
 
-function killEnemy(i){
-    let e=enemies.splice(i,1)[0];
-    kills++;
-    if(!e.isBoss){
-        score+=10;
-        if(phase==="wave"&&enemies.length===0) showShop();
-        return;
-    }
-    openCards();
-    setTimeout(()=>{stage++; spawnWave();},200);
-}
-
-// ---------------- SHOP ----------------
-function showShop(){
-    showingCards=true; gameActive=false;
-    const div=document.getElementById("cartas");
-    div.innerHTML=""; div.style.display="flex";
-    const pool=[
-        {t:"+1 vida máxima", f:()=>{maxLives++; lives++;}},
-        {t:"Tiro duplo", f:()=>{doubleShot=true;}},
-        {t:"Espada maior", f:()=>{swordDrag.length+=40;}},
-        {t:"Velocidade +", f:()=>{player.speed+=1;}},
-        {t:"Reduz cooldown espada", f:()=>{swordCooldown=Math.max(5,swordCooldown-5);}},
-        {t:"NPC aliado que atira", f:()=>{spawnCustomNPC();}}
-    ];
-    shuffle(pool);
-    for(let i=0;i<3;i++){
-        let c=document.createElement("div");
-        c.className="cartao"; c.textContent=pool[i].t;
-        c.onclick=()=>{ pool[i].f(); div.style.display="none"; showingCards=false; spawnBoss(); gameActive=true; };
-        div.appendChild(c);
-    }
-}
-
-function openCards(){showShop();}
-function shuffle(a){for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];}}
-
-// ---------------- UPDATE ----------------
-function update(){
-    if(!gameActive) return;
-    if(shootCooldown>0) shootCooldown--;
-    if(swordCooldown>0) swordCooldown--;
-    if((keys[" "]||keys["space"])&&weapon==="sword") swordDrag.active=true;
-
-    if(keys["w"]||keys["arrowup"]) player.y-=player.speed;
-    if(keys["s"]||keys["arrowdown"]) player.y+=player.speed;
-    if(keys["a"]||keys["arrowleft"]) player.x-=player.speed;
-    if(keys["d"]||keys["arrowright"]) player.x+=player.speed;
-    player.x=Math.max(0,Math.min(W-PLAYER_SIZE,player.x));
-    player.y=Math.max(0,Math.min(H-PLAYER_SIZE,player.y));
-
-    updateSwordDrag();
-
-    enemies.forEach(e=>{
-        e.x+=e.vx; e.y+=e.vy;
-        if(e.x<0||e.x+e.w>W) e.vx*=-1;
-        if(e.y<0||e.y+e.h>H) e.vy*=-1;
-
-        // inimigos atiram
-        if(e.shootInterval>0){
-            e.shootTimer=(e.shootTimer||0)+1;
-            if(e.shootTimer>=e.shootInterval){
-                shootEnemy(e);
-                e.shootTimer=0;
-            }
-        }
-
-        // boss atira em padrão circular
-        if(e.isBoss){
-            e.patternTimer=(e.patternTimer||0)+1;
-            if(e.patternTimer%50===0){
-                for(let angle=0;angle<360;angle+=30){
-                    let rad=angle*Math.PI/180;
-                    let tx=e.x+e.w/2 + Math.cos(rad)*100;
-                    let ty=e.y+e.h/2 + Math.sin(rad)*100;
-                    enemyBullets.push(new Bullet(e.x+e.w/2,e.y+e.h/2,tx,ty,4,"#f4f"));
-                }
-            }
-        }
-    });
-
-    updateBullets(playerBullets,true);
-    updateBullets(enemyBullets,false);
-}
-
-function shootEnemy(e){
-    let tx=player.x+PLAYER_SIZE/2;
-    let ty=player.y+PLAYER_SIZE/2;
-    enemyBullets.push(new Bullet(e.x+e.w/2,e.y+e.h/2,tx,ty,4,"#4af"));
-}
-
-function spawnCustomNPC(){
-    // NPC aliado que atira em inimigos automaticamente
-    let npc={x:player.x+50,y:player.y, w:28,h:28, vx:0, vy:0, shootTimer:0, shootInterval:30, hp:10, type:"ally"};
-    enemies.push(npc);
-}
-
-function updateBullets(arr,isPlayer){
-    for(let i=arr.length-1;i>=0;i--){
-        let b=arr[i];
-        b.update();
-        if(b.off()){arr.splice(i,1); continue;}
-        if(!isPlayer){
-            let d=Math.hypot(b.x-(player.x+PLAYER_SIZE/2),b.y-(player.y+PLAYER_SIZE/2));
-            if(d<14){ arr.splice(i,1); lives--; if(lives<=0) gameOver(); specialBar=Math.min(maxSpecial,specialBar+1);}
-        } else{
-            for(let j=enemies.length-1;j>=0;j--){
-                let e=enemies[j];
-                if(e.type==="ally") continue;
-                let dx=(e.x+e.w/2)-b.x;
-                let dy=(e.y+e.h/2)-b.y;
-                if(Math.hypot(dx,dy)<18){ arr.splice(i,1); hitEnemy(j); break; }
-            }
-        }
-    }
-}
-
-function gameOver(){gameActive=false; gameOverFlag=true;}
-
-// ---------------- DRAW ----------------
-function draw(){
-    ctx.clearRect(0,0,W,H);
-    drawPlayer();
-    drawSwordDrag();
-
-    enemies.forEach(e=>{
-        ctx.fillStyle=e.isBoss?"#600":(e.type==="ally"?"#0ff":"#f0f");
-        ctx.fillRect(e.x,e.y,e.w,e.h);
-        if(e.isBoss){
-            let bw=e.w*(e.hp/e.maxHp);
-            ctx.fillStyle="#fff"; ctx.fillRect(e.x,e.y-10,e.w,6);
-            ctx.fillStyle="red"; ctx.fillRect(e.x,e.y-10,bw,6);
-        }
-    });
-
-    playerBullets.forEach(b=>b.draw());
-    enemyBullets.forEach(b=>b.draw());
-
-    ctx.fillStyle="#0f0";
-    ctx.fillText("Fase: "+stage,10,18);
-    ctx.fillText("Vidas: "+lives+"/"+maxLives,10,34);
-    ctx.fillText("Kills: "+kills,10,50);
-    ctx.fillText("Score: "+score,10,66);
-    ctx.fillText("Arma: "+(weapon==="gun"?"Tiro":"Espada"),10,82);
-
-    // barra ultimate
-    ctx.strokeStyle="#ff0";
-    ctx.strokeRect(W-120,H-30,100,10);
-    ctx.fillStyle="#ff0";
-    ctx.fillRect(W-120,H-30,100*(specialBar/maxSpecial),10);
-
-    if(gameOverFlag){
-        ctx.fillStyle="rgba(0,0,0,0.7)";
-        ctx.fillRect(0,0,W,H);
-        ctx.fillStyle="red";
-        ctx.font="40px Arial";
-        ctx.fillText("GAME OVER",W/2-120,H/2);
-        ctx.font="18px Arial";
-        ctx.fillText("Pressione R para voltar ao menu",W/2-150,H/2+30);
-    }
-}
-
-// ---------------- LOOP ----------------
-function loop(){requestAnimationFrame(loop); update(); draw();}
-loop();
-</script>
-</body>
-</html>
