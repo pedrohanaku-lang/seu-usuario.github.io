@@ -1,320 +1,403 @@
-#! python3
-# Free_Games.py - A script that Windows Task Scheduler can run to go and get me them sweet sweet free games I'll probably never play
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Samurai Rogue</title>
+<style>
+body{margin:0;background:#000;display:flex;justify-content:center;align-items:center;height:100vh}
+canvas{background:#111;border:2px solid #0f0}
+</style>
+</head>
+<body>
+<canvas id="c" width="900" height="600"></canvas>
 
-from os import getenv
-from dotenv import load_dotenv
-load_dotenv()
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
 
-# Pull credentials from .env, then transpose the matrix.
-# .env variables should be comma-separated if using multiple users.
-a = [getenv("EPIC_EMAIL").split(","), getenv("EPIC_PASSWORD").split(","), getenv("EPIC_TFA_TOKEN").split(",")]
-credentialslist = [[a[j if len(str(j)) > 0 else None][i if len(str(i)) > 0 else None] for j in range(len(a))] for i in range(len(a[0]))]
+const W=900,H=600;
 
-# You may desire to replace the user-agent below. You can leave it as is or google 'what is my user agent' and copy that between the single quotes below
-user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36"
+let mouse={x:0,y:0,down:false};
 
-import lxml.html, pyotp, re, sys, time, traceback
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from urllib.parse import quote as uriencode
+let player;
+let enemies=[];
+let bullets=[];
+let enemyBullets=[];
+let allies=[];
 
-# Find the xpath of a given soup object.
-# Full credit goes to ergoithz over at:               https://gist.github.com/ergoithz
-# Here is the link to the function on their GitHub:   https://gist.github.com/ergoithz/6cf043e3fdedd1b94fcf
-def xpath_soup(element):
-    # type: (typing.Union[bs4.element.Tag, bs4.element.NavigableString]) -> str
-    components = []
-    child = element if element.name else element.parent
-    for parent in child.parents:  # type: bs4.element.Tag
-        siblings = parent.find_all(child.name, recursive=False)
-        components.append(
-            child.name if 1 == len(siblings) else '%s[%d]' % (
-                child.name,
-                next(i for i, s in enumerate(siblings, 1) if s is child)
-                )
-            )
-        child = parent
-    components.reverse()
-    return '/%s' % '/'.join(components)
+let ult=0;
+let maxUlt=100;
+let usingUlt=false;
+let ultTimer=0;
 
-# Make a function to actually get the game that we can call later
-def getGame():
-    language = None
-    while not isinstance(language, str):
-        try: 
-            language = re.search(r"/store/(\D+?)/", browser.current_url).group(1)
-        except Exception:
-            pass
-    if language != "en-US":
-        print("Product page loaded in language other than english, reloading as english")
-        browser.get( re.sub(language, "en-US", browser.current_url) )
-    else:
-        browser.get(browser.current_url)
-    wait_until_xpath_visible("//*[@id='siteNav']")
-    time.sleep(1)
-               
-    game_title = browser.title
-    print("Claiming game " + game_title)    
-    
-    wait_until_xpath_clickable_then_click("//*[text() = 'Continue']", 1) # Continue +18 button
+const sword = {
+    angle:0,
+    len:80,
+    width:10,
+    active:false,
+};
 
-    if wait_until_xpath_visible("//*[text() = 'Owned']", 1):
-        print("Already owned")
-        return
-    
-    try:
-        if not wait_until_xpath_clickable_then_click("//*[text() = 'Get']"):
-            raise TypeError("Unable to find 'Get' button")
-    except:
-        print("Failed to click on 'Get' button. Using parent element workaround... ", end='')
-        if not wait_until_xpath_clickable_then_click("//*[text() = 'Get']/.."):
-            raise TypeError("Workaround failed")
-        else:
-            print("Worked")
-    if not wait_until_xpath_clickable_then_click("//*[text() = 'Place Order']"):
-        raise TypeError("Unable to find 'Place Order' button")
-        
-    # Wait until redirected to "THANK YOU" page
-    wait_redirect_count = 0
-    has_warned_captcha = False
-    eula_accepted = False
-    print("Waiting for order confirmation")
-    while True:
-        try:
-            if (eula_accepted == False):
-                if wait_until_xpath_visible("//*[text() = 'I Agree']", 1): # EULA prompt
-                    time.sleep(1)
-                    wait_until_xpath_clickable_then_click("//*[text() = 'I Agree']")
-                    print("EULA accepted")
-                    eula_accepted = True
-                    
-            if (wait_redirect_count >= 5) & (has_warned_captcha == False):
-                print("Still waiting - Possible captcha requiring completion")
-                has_warned_captcha = True
-                
-            if wait_until_xpath_visible("//*[contains(text(), 'Thank you for buying') or contains(text(), 'Got Epic Games')]", 1):
-                break
-            
-            time.sleep(1)
-            wait_redirect_count += 1
-        except Exception:
-            pass
-    print("Order confirmed")
+canvas.addEventListener("mousemove",e=>{
+    const r=canvas.getBoundingClientRect();
+    mouse.x=e.clientX-r.left;
+    mouse.y=e.clientY-r.top;
+});
 
-# Try clicking on a game
-def try_click_game(game):
-    next_button = try_get_carousel_button()
-    for _ in range(60):
-        if wait_until_xpath_clickable_then_click(game["xpath"], 1):
-            # Wait 1 second for the game to become clickable, throw an exception if it doesn't
-            # If the script gets stuck cycling through the carousel, means that the object it wants to click on
-            # is unclickable for some other reason I haven't encountered before           
-            # Exit the loop once the game was clicked
-            return True
-        else:
-            # Click the next button, cycling through the carousel if it can
-            if next_button is not None:
-                print("Cycling through carousel")
-                next_button.click()           
-    return False
+canvas.addEventListener("mousedown",e=>{
+    if(e.button===0) mouse.down=true;
+});
+canvas.addEventListener("mouseup",e=>{
+    if(e.button===0) mouse.down=false;
+});
 
-# Check for, and close, the cookies banner
-def accept_cookies():
-    print("Accepting cookies")
-    is_displayed_count = 0
-    has_warned_cookies = False
-    cookies_button = wait_until_xpath_clickable_then_click("//*[@id='onetrust-accept-btn-handler']")
-    if cookies_button:
-        while cookies_button.is_displayed(): # Wait until cookie banner disappears
-            if (is_displayed_count >= 5) & (has_warned_cookies == False):
-                print("Waiting - Cookies banner is still visible and obscuring games elements")
-            is_displayed_count += 1
-            time.sleep(1)
-        print("Successfully accepted cookies")
-    else:
-        print("Cookies banner not found, probably accepted already")
+let keys={};
+window.addEventListener("keydown",e=>{
+    keys[e.key.toLowerCase()]=true;
 
-# Get carousel next button
-def try_get_carousel_button():
-    next_button_tag = wait_until_xpath_visible("//*[@aria-label='Next item']")
-    if next_button_tag:
-        return next_button_tag
-    else:
-        print("Carousel 'Next item' button not found")
-        return None
+    if(e.key.toLowerCase()==="g" && ult>=maxUlt && !usingUlt){
+        usingUlt=true;
+        ultTimer=30;
+        ult=0;
+    }
+});
+window.addEventListener("keyup",e=>{
+    keys[e.key.toLowerCase()]=false;
+});
 
-def start_firefox_browser(user_agent):
-    profile = webdriver.FirefoxProfile()
-    profile.set_preference("general.useragent.override", user_agent) # We will use the user-agent to trick the website into thinking we are a real person. This usually subverts most basic security
+function reset(){
+    player={x:450,y:300,r:18,speed:4,hp:5};
 
-    browser = webdriver.Firefox(profile) # Setup the browser object to use our modified profile
-    browser.maximize_window()
-    return browser
+    enemies=[];
+    bullets=[];
+    enemyBullets=[];
+    allies=[];
 
-def log_into_account(email, password, two_fa_key=None):
-    # Loading login page and waiting until ready
-    print("Logging into account " + email)
-    browser.get(epic_login_url + "?redirectUrl=" + uriencode(epic_store_url))
-    if not wait_until_xpath_presence_located("//*[@id='email']"):
-        raise TypeError("Unable to find email input field")
+    spawnWave();
 
-    # Logging in into the account
-    browser.find_element_by_id('email').send_keys(email)
-    browser.find_element_by_id('password').send_keys(password)
-    if not wait_until_xpath_clickable_then_click("//*[@id='sign-in']"):
-        raise TypeError("Unable to find sign-in button")
-    # 2FA
-    if (two_fa_key != None):
-        wait_located_count = 0
-        has_warned_captcha = False
-        while not wait_until_xpath_presence_located("//*[@id='code']", 1):
-            if (wait_located_count >= 3) & (has_warned_captcha == False):
-                print("Waiting - Cannot find 2FA input field - Possible captcha requiring completion")
-                has_warned_captcha = True
-            wait_located_count += 1
-        browser.find_element_by_id('code').send_keys(Keys.HOME) # Make sure to be at beginning of field
-        browser.find_element_by_id('code').send_keys(pyotp.TOTP(two_fa_key).now()) # 2FA login code
-        if not wait_until_xpath_clickable_then_click("//*[@id='continue']"):
-            raise TypeError("Unable to find 2FA continue button")
+    ult=0;
+}
 
-    # Waiting until redirected to store - captcha detection workaround
-    wait_redirect_count = 0
-    has_warned_captcha = False
-    print("Waiting to be automatically redirected to store page")
-    while not re.search(epic_store_url, browser.current_url):
-        if (wait_redirect_count >= 5) & (has_warned_captcha == False):
-            print("Still waiting - Possible captcha requiring completion")
-            has_warned_captcha = True
-        time.sleep(1)
-        wait_redirect_count += 1
-    print("Successfully logged in " + email)
-    browser.get(epic_store_url) # So it automatically waits until page is loaded
-    wait_until_xpath_visible("//*[@id='siteNav']")
-    time.sleep(1)
-    
-def log_out():    
-    browser.get(epic_logout_url + "?redirectUrl=" + uriencode(epic_store_url))
-    wait_redirect_count = 0
-    has_warned_logout = False
-    while not re.search(epic_store_url, browser.current_url):
-        if (wait_redirect_count >= 5) & (has_warned_logout == False):
-            print("Still waiting to be redirected to store page after logout")
-            has_warned_logout = True
-        time.sleep(1)
-        wait_redirect_count += 1
-    print("Successfully logged out\n")
+function spawnWave(){
+    for(let i=0;i<4;i++) spawnEnemy("shooter");
+    spawnEnemy("dasher");
+    spawnBoss();
+}
 
-def get_free_games_list():   
-    if not re.search(epic_store_url, browser.current_url):
-        browser.get(epic_store_url)
-        wait_until_xpath_visible("//*[@id='siteNav']")
-        time.sleep(1)
-    
-    free_now_xpath_str = "//*[translate(text(),'FREE NOW','free now') = 'free now']"
-    get_it_free_xpath_str = "//*[translate(text(),'GET IT FREE','get it free') = 'get it free']"           
-                
-    free_now_elements = browser.find_elements_by_xpath(free_now_xpath_str)
-    get_it_free_element = browser.find_elements_by_xpath(get_it_free_xpath_str)
-    if len(free_now_elements) == 0 & len(get_it_free_element) == 0:
-        raise TypeError("Free games list is empty")
-    
-    free_games = []
-    for index, element in enumerate(free_now_elements):
-        num = "[" + str(index+1) + "]"
-        free_games.append({"xpath": "(" + free_now_xpath_str + ")" + num, "element": element}) # Literally "(//*[translate(text(),'FREE NOW','free now') = 'free now'])[1]"
-    for index, element in enumerate(get_it_free_element):
-        num = "[" + str(index+1) + "]"
-        free_games.append({"xpath": "(" + get_it_free_xpath_str + ")" + num, "element": element}) # Literally "(//*[translate(text(),'GET IT FREE','get it free') = 'get it free'])[1]"
-    
-    return free_games
+function spawnEnemy(type){
+    let e={
+        x:Math.random()*W,
+        y:Math.random()*H,
+        r:16,
+        type,
+        hp:type==="dasher"?4:3,
+        t:0
+    };
+    enemies.push(e);
+}
 
-def claim_free_games():
-    games = get_free_games_list()
-    games_count = len(games)
-    print("Found " + str(games_count) + " free games")
-    for index, game in enumerate(games): # Go thru each game we found and get it!
-        if not try_click_game(game): # Try to click on the current game
-            try:
-                game.click() # Try to click on the game one last time
-            except:
-                game_claim_errors_count += 1
-                print("Game at index " + str(index) + " was skipped due to being unable to click on it") # If it didn't work, skip to the next game
-                continue
-        getGame()
-        if (index+1 < games_count):
-            browser.get(epic_store_url) # Go back to the store page to get the other game
-            wait_until_xpath_visible("//*[@id='siteNav']")
-            time.sleep(1)
-            games[index+1]["element"] = browser.find_element_by_xpath(game["xpath"]) # Selenium complains this object no longer exists, so we need to re-get it so it doesn't explode
-            
+function spawnBoss(){
+    enemies.push({
+        x:W/2,
+        y:120,
+        w:160,
+        h:120,
+        isBoss:true,
+        hp:120,
+        t:0
+    });
+}
 
-def wait_until_xpath_presence_located(xstr, wait_duration=10):
-    try:
-        element = WebDriverWait(browser, wait_duration).until(EC.presence_of_element_located((By.XPATH, xstr)))
-        return element
-    except TimeoutException:
-        return False
+function spawnAlly(){
+    allies.push({
+        x:player.x+30,
+        y:player.y,
+        t:0
+    });
+}
 
-def wait_until_xpath_clickable_then_click(xstr, wait_duration=10):
-    try:
-        element = WebDriverWait(browser, wait_duration).until(EC.element_to_be_clickable((By.XPATH, xstr)))
-        time.sleep(0.5) # Small wait to avoid potential issues
-        browser.find_element_by_xpath(xstr).click()
-        return element
-    except TimeoutException:
-        return False
-    
-def wait_until_xpath_clickable(xstr, wait_duration=10):
-    try:
-        element = WebDriverWait(browser, wait_duration).until(EC.element_to_be_clickable((By.XPATH, xstr)))
-        return element
-    except TimeoutException:
-        return False
-    
-def wait_until_xpath_visible(xstr, wait_duration=10):
-    start_time = time.time()
-    while True:
-        try:
-            element = WebDriverWait(browser, wait_duration).until(EC.presence_of_element_located((By.XPATH, xstr)))
-            if element.is_displayed():
-                return element
-            if ( (time.time() - start_time) > wait_duration ):
-                return False
-            time.sleep(1)
-            
-        except TimeoutException:
-            return False
-    
-def show_exception_and_exit(exc_type, exc_value, tb):
-    traceback.print_exception(exc_type, exc_value, tb)
-    input("Press key to exit.")
-    browser.quit()
-    sys.exit(-1)
-   
-##### MAIN #####
-sys.excepthook = show_exception_and_exit
-game_claim_errors_count = 0
+function shootEnemy(e){
+    enemyBullets.push({
+        x:e.x,
+        y:e.y,
+        vx:(player.x-e.x)/40,
+        vy:(player.y-e.y)/40
+    });
+}
 
-epic_home_url = "https://www.epicgames.com/site/en-US/home"
-epic_store_url = "https://www.epicgames.com/store/en-US"
-epic_login_url = "https://www.epicgames.com/id/login/epic"
-epic_logout_url = "https://www.epicgames.com/id/logout"
+function update(){
 
-browser = start_firefox_browser(user_agent)
+    // player
+    if(keys.a) player.x-=player.speed;
+    if(keys.d) player.x+=player.speed;
+    if(keys.w) player.y-=player.speed;
+    if(keys.s) player.y+=player.speed;
 
-for credentials in credentialslist:
-    print(credentials)
-    log_into_account(*credentials)
-    accept_cookies()
-    claim_free_games()
-    if game_claim_errors_count > 0:
-        print("/!\\ Some games failed to be claimed /!\\")
-    log_out()
+    player.x=Math.max(20,Math.min(W-20,player.x));
+    player.y=Math.max(20,Math.min(H-20,player.y));
 
-browser.quit()
+    // sword follow mouse while holding
+    sword.active = mouse.down;
 
+    if(sword.active){
+        sword.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+        checkSwordHits();
+    }
+
+    // enemies
+    for(let e of enemies){
+
+        e.t++;
+
+        if(e.isBoss){
+            if(e.t%25===0){
+                for(let a=0;a<Math.PI*2;a+=Math.PI/6){
+                    enemyBullets.push({
+                        x:e.x,
+                        y:e.y,
+                        vx:Math.cos(a)*4,
+                        vy:Math.sin(a)*4
+                    });
+                }
+            }
+        }else if(e.type==="shooter"){
+            if(e.t%60===0) shootEnemy(e);
+        }else if(e.type==="dasher"){
+            let dx=player.x-e.x;
+            let dy=player.y-e.y;
+            let d=Math.hypot(dx,dy)||1;
+            e.x+=dx/d*2.5;
+            e.y+=dy/d*2.5;
+        }
+    }
+
+    // enemy bullets
+    for(let b of enemyBullets){
+        b.x+=b.vx;
+        b.y+=b.vy;
+    }
+
+    // allies
+    for(let a of allies){
+        a.t++;
+        a.x+= (player.x-a.x)*0.05;
+        a.y+= (player.y-a.y)*0.05;
+
+        if(a.t%40===0){
+            bullets.push({
+                x:a.x,
+                y:a.y,
+                vx:(nearestEnemyX(a)-a.x)/25,
+                vy:(nearestEnemyY(a)-a.y)/25
+            });
+        }
+    }
+
+    // player bullets
+    for(let b of bullets){
+        b.x+=b.vx;
+        b.y+=b.vy;
+    }
+
+    updateCollisions();
+
+    // ultimate
+    if(usingUlt){
+        ultTimer--;
+        if(ultTimer<=0) usingUlt=false;
+    }
+
+}
+
+function nearestEnemyX(a){
+    if(enemies.length===0) return a.x;
+    return enemies[0].x;
+}
+function nearestEnemyY(a){
+    if(enemies.length===0) return a.y;
+    return enemies[0].y;
+}
+
+// real sword segment collision
+function checkSwordHits(){
+
+    let x1=player.x;
+    let y1=player.y;
+    let x2=player.x+Math.cos(sword.angle)*sword.len;
+    let y2=player.y+Math.sin(sword.angle)*sword.len;
+
+    // enemies
+    for(let i=enemies.length-1;i>=0;i--){
+        let e=enemies[i];
+
+        if(e.isBoss){
+            if(lineRect(x1,y1,x2,y2,e.x-e.w/2,e.y-e.h/2,e.w,e.h)){
+                e.hp--;
+                gainUlt(2);
+            }
+        }else{
+            let d=distToSegment(e.x,e.y,x1,y1,x2,y2);
+            if(d<e.r){
+                e.hp--;
+                gainUlt(2);
+            }
+        }
+
+        if(e.hp<=0) enemies.splice(i,1);
+    }
+
+    // bullets cut
+    for(let i=enemyBullets.length-1;i>=0;i--){
+        let b=enemyBullets[i];
+        let d=distToSegment(b.x,b.y,x1,y1,x2,y2);
+        if(d<6){
+            if(Math.random()<0.3){
+                enemyBullets.splice(i,1);
+                gainUlt(1);
+            }
+        }
+    }
+
+}
+
+function gainUlt(v){
+    ult=Math.min(maxUlt,ult+v);
+}
+
+function updateCollisions(){
+
+    // ult hit
+    if(usingUlt){
+        for(let i=enemies.length-1;i>=0;i--){
+            enemies[i].hp-=2;
+            if(enemies[i].hp<=0) enemies.splice(i,1);
+        }
+        enemyBullets=[];
+    }
+
+    // bullets hit enemies
+    for(let i=bullets.length-1;i>=0;i--){
+        let b=bullets[i];
+        for(let j=enemies.length-1;j>=0;j--){
+            let e=enemies[j];
+            let d=Math.hypot(b.x-e.x,b.y-e.y);
+            if(d<20){
+                e.hp--;
+                bullets.splice(i,1);
+                if(e.hp<=0) enemies.splice(j,1);
+                break;
+            }
+        }
+    }
+
+}
+
+// helpers
+function distToSegment(px,py,x1,y1,x2,y2){
+    const l2=(x2-x1)**2+(y2-y1)**2;
+    if(l2===0) return Math.hypot(px-x1,py-y1);
+    let t=((px-x1)*(x2-x1)+(py-y1)*(y2-y1))/l2;
+    t=Math.max(0,Math.min(1,t));
+    const x=x1+t*(x2-x1);
+    const y=y1+t*(y2-y1);
+    return Math.hypot(px-x,py-y);
+}
+
+function lineRect(x1,y1,x2,y2,rx,ry,rw,rh){
+    return lineLine(x1,y1,x2,y2,rx,ry,rx+rw,ry) ||
+           lineLine(x1,y1,x2,y2,rx,ry,rx,ry+rh) ||
+           lineLine(x1,y1,x2,y2,rx+rw,ry,rx+rw,ry+rh) ||
+           lineLine(x1,y1,x2,y2,rx,ry+rh,rx+rw,ry+rh);
+}
+
+function lineLine(x1,y1,x2,y2,x3,y3,x4,y4){
+    const uA=((x4-x3)*(y1-y3)-(y4-y3)*(x1-x3))/((y4-y3)*(x2-x1)-(x4-x3)*(y2-y1));
+    const uB=((x2-x1)*(y1-y3)-(y2-y1)*(x1-x3))/((y4-y3)*(x2-x1)-(x4-x3)*(y2-y1));
+    return uA>=0&&uA<=1&&uB>=0&&uB<=1;
+}
+
+function draw(){
+
+    ctx.clearRect(0,0,W,H);
+
+    // player
+    ctx.fillStyle="#0f0";
+    ctx.beginPath();
+    ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
+    ctx.fill();
+
+    // sword
+    if(sword.active){
+        ctx.strokeStyle="yellow";
+        ctx.lineWidth=sword.width;
+        ctx.beginPath();
+        ctx.moveTo(player.x,player.y);
+        ctx.lineTo(
+            player.x+Math.cos(sword.angle)*sword.len,
+            player.y+Math.sin(sword.angle)*sword.len
+        );
+        ctx.stroke();
+    }
+
+    // enemies
+    for(let e of enemies){
+        if(e.isBoss){
+            ctx.fillStyle="#800";
+            ctx.fillRect(e.x-e.w/2,e.y-e.h/2,e.w,e.h);
+        }else{
+            ctx.fillStyle=e.type==="dasher"?"#f33":"#f0f";
+            ctx.beginPath();
+            ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
+            ctx.fill();
+        }
+    }
+
+    // bullets
+    ctx.fillStyle="#f44";
+    for(let b of bullets) ctx.fillRect(b.x-2,b.y-2,4,4);
+
+    ctx.fillStyle="#4af";
+    for(let b of enemyBullets) ctx.fillRect(b.x-3,b.y-3,6,6);
+
+    // allies
+    ctx.fillStyle="#0ff";
+    for(let a of allies){
+        ctx.beginPath();
+        ctx.arc(a.x,a.y,10,0,Math.PI*2);
+        ctx.fill();
+    }
+
+    // ult bar
+    ctx.fillStyle="#fff";
+    ctx.fillRect(20,20,200,10);
+    ctx.fillStyle="#ff0";
+    ctx.fillRect(20,20,200*(ult/maxUlt),10);
+
+    if(usingUlt){
+        ctx.strokeStyle="#ff0";
+        ctx.lineWidth=8;
+        ctx.beginPath();
+        ctx.moveTo(0,H/2);
+        ctx.lineTo(W,H/2);
+        ctx.stroke();
+    }
+
+}
+
+function loop(){
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// bônus: ganhar NPC aliado apertando H (upgrade exemplo)
+window.addEventListener("keydown",e=>{
+    if(e.key.toLowerCase()==="h"){
+        spawnAlly();
+    }
+});
+
+reset();
+loop();
+</script>
+</body>
+</html>
