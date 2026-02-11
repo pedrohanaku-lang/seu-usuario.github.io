@@ -1,18 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Time Zueira - Final</title>
+    <title>Time Zueira RPG - Anti-Blackscreen</title>
     <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
 </head>
-<body style="margin:0; overflow:hidden;">
+<body style="margin:0; background:#000;">
 <script>
-// 1. Inicialização robusta
-kaboom({
-    background: [10, 10, 15],
+// 1. Inicialização Forçada
+const k = kaboom({
+    background: [20, 20, 30],
     scale: 1.5,
 })
 
-// 2. Carregamento com nomes simples
+// 2. Carregamento de Sprites (Tente carregar, mas não trave o jogo)
 loadSprite("hero", "_Hugkw.gif")
 loadSprite("mestre", "XSuwrQ.gif")
 loadSprite("ninja", "Ru5PS2.gif")
@@ -20,118 +20,110 @@ loadSprite("mago", "KFBLh9.gif")
 loadSprite("inimigo", "sRNxiP.gif")
 loadSprite("logo", "image_da46a4.png")
 
-// 3. Cena Principal
 scene("game", () => {
-    
-    // Jogador com atributos de moveset
+    // Sistema de Dano e Armas
+    let armaNivel = 0 // 0 = Inútil, 1 = Lâmina VMZ
+
+    // Jogador
     const player = add([
-        sprite("hero"),
-        pos(center()),
+        sprite("hero"), 
+        pos(100, 100),
         area(),
         body(),
         anchor("center"),
         {
-            speed: 180,
-            dashing: false,
-            temArma: false, // Começa inútil
+            speed: 200,
+            isDashing: false,
         }
     ])
 
-    // A Espada (começa invisível/inútil)
-    const espada = player.add([
-        rect(4, 30),
-        color(150, 150, 150),
+    // Espada Visual (seguindo o player)
+    const sword = add([
+        rect(5, 30),
         anchor("bot"),
-        pos(15, 10),
-        rotate(0),
-        opacity(0), // Invisível no início
-        "espada_visual"
+        pos(player.pos),
+        color(150, 150, 150),
+        opacity(0), // Começa escondida
     ])
 
-    // --- NPCs e Inimigo ---
-    const npcMestre = add([
+    // NPCs e Boss
+    const mestre = add([
         sprite("mestre"),
-        pos(200, 200),
+        pos(300, 150),
         area(),
         anchor("center"),
         "npc"
     ])
 
-    add([
-        sprite("mago"),
-        pos(500, 150),
-        area(),
-        anchor("center")
-    ])
-
     const boss = add([
         sprite("inimigo"),
-        pos(600, 400),
+        pos(500, 350),
         area(),
         health(100),
         anchor("center"),
         "enemy"
     ])
 
-    // --- MOVESET: ATAQUE E DASH ---
+    // --- MOVESET (DASH E ATAQUE) ---
 
-    // Ataque (Espaço)
+    // ATAQUE (ESPAÇO)
     onKeyPress("space", () => {
-        if (!player.temArma) {
-            // Arma inútil: apenas um texto
+        sword.opacity = 1
+        sword.pos = player.pos.add(player.flipX ? -15 : 15, 0)
+        
+        // Animação de corte
+        tween(0, 120, 0.1, (v) => sword.angle = player.flipX ? -v : v, easings.easeOutQuad)
+        
+        wait(0.15, () => {
+            sword.opacity = 0
+            sword.angle = 0
+        })
+
+        // Lógica de Dano
+        if (armaNivel === 1) {
+            if (player.pos.dist(boss.pos) < 70) {
+                boss.hurt(20)
+                shake(10)
+                addKaboom(boss.pos)
+            }
+        } else {
+            // Se a arma for inútil (Nível 0)
             add([
-                text("ARMA INÚTIL", { size: 10 }),
-                pos(player.pos.add(0, -30)),
-                lifespan(0.5),
+                text("DANO ZERO", { size: 10 }),
+                pos(player.pos.add(0, -40)),
+                lifespan(0.3),
                 move(UP, 100)
             ])
-            return
         }
-
-        // Ataque com a Lâmina
-        espada.opacity = 1
-        tween(0, 120, 0.1, (v) => espada.angle = player.flipX ? -v : v, easings.easeOutQuad)
-        
-        // Dano no inimigo
-        if (player.pos.dist(boss.pos) < 80) {
-            boss.hurt(20)
-            shake(5)
-            addKaboom(boss.pos)
-        }
-
-        wait(0.2, () => {
-            espada.angle = 0
-            espada.opacity = 0
-        })
     })
 
-    // Dash (Shift)
+    // DASH (SHIFT)
     onKeyPress("shift", () => {
-        if (player.dashing) return
-        player.dashing = true
-        player.speed = 600
+        if (player.isDashing) return
+        player.isDashing = true
+        player.speed = 800
         
-        // Efeito visual de rastro
-        const rastro = add([
+        // Efeito visual de rastro (Ghost)
+        const ghost = add([
             sprite("hero"),
             pos(player.pos),
-            opacity(0.5),
+            opacity(0.4),
             lifespan(0.1)
         ])
-        
+
         wait(0.1, () => {
-            player.speed = 180
-            player.dashing = false
+            player.speed = 200
+            player.isDashing = false
         })
     })
 
     // --- INTERAÇÃO (E) ---
     onKeyPress("e", () => {
-        if (player.pos.dist(npcMestre.pos) < 60) {
-            player.temArma = true
-            espada.color = rgb(0, 255, 255) // Fica Neon
+        if (player.pos.dist(mestre.pos) < 60) {
+            armaNivel = 1
+            sword.color = rgb(0, 255, 255) // A espada fica azul neon
             add([
-                text("VOCÊ PEGOU A LÂMINA REAL!", { size: 20 }),
+                text("LÂMINA VMZ OBTIDA!", { size: 20 }),
                 pos(center()),
                 anchor("center"),
                 lifespan(2),
@@ -140,37 +132,35 @@ scene("game", () => {
         }
     })
 
-    // --- CONTROLES E CÂMERA ---
-    onKeyDown("left", () => { player.move(-player.speed, 0); player.flipX = true })
-    onKeyDown("right", () => { player.move(player.speed, 0); player.flipX = false })
-    onKeyDown("up", () => player.move(0, -player.speed))
-    onKeyDown("down", () => player.move(0, player.speed))
+    // --- MOVIMENTAÇÃO ---
+    onKeyDown("a", () => { player.move(-player.speed, 0); player.flipX = true })
+    onKeyDown("d", () => { player.move(player.speed, 0); player.flipX = false })
+    onKeyDown("w", () => player.move(0, -player.speed))
+    onKeyDown("s", () => player.move(0, player.speed))
 
+    // Câmera e Update
     player.onUpdate(() => {
         camPos(player.pos)
+        sword.pos = player.pos.add(player.flipX ? -10 : 10, 5)
     })
 
     boss.onDeath(() => {
         destroy(boss)
-        go("win")
+        add([
+            sprite("logo"),
+            pos(player.pos),
+            anchor("center")
+        ])
+        add([
+            text("BOSS ELIMINADO", { size: 30 }),
+            pos(player.pos.add(0, 100)),
+            anchor("center")
+        ])
     })
-
-    // HUD
-    add([
-        text("SHIFT: Dash | ESPAÇO: Atacar | E: Falar com Mestre", { size: 12 }),
-        pos(20, 20),
-        fixed()
-    ])
 })
 
-scene("win", () => {
-    add([ sprite("logo"), pos(center()), anchor("center") ])
-    add([ text("VITÓRIA DO TIME ZUEIRA", { size: 30 }), pos(center().add(0, 150)), anchor("center") ])
-})
-
-// Forçar início imediato
+// Inicia o jogo imediatamente, sem esperar carregamento infinito
 go("game")
-
 </script>
 </body>
 </html>
