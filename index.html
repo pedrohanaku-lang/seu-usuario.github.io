@@ -1,22 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Time Zueira RPG - Fixed</title>
+    <title>Time Zueira RPG - Final Fix</title>
     <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #050505; }
+        body { margin: 0; overflow: hidden; background-color: #000; }
     </style>
 </head>
 <body>
 <script>
-// 1. Inicialização
+// 1. Inicialização do Motor
 kaboom({
     scale: 3,
-    background: [10, 10, 15],
+    background: [0, 0, 0],
     crisp: true,
 })
 
-// 2. Carregamento dos Assets
+// 2. Carregamento dos Assets (Imagens enviadas)
 loadSprite("logo_vmz", "image_da3f41.png");
 loadSprite("logo_tz", "image_da46a4.png");
 loadSprite("hero_spectral", "_Hugkw.gif"); 
@@ -26,308 +26,161 @@ loadSprite("old_master", "XSuwrQ.gif");
 loadSprite("wizard", "KFBLh9.gif");        
 loadSprite("samurai_red", "sRNxiP.gif");   
 
-// Tileset do cenário
+// Tileset padrão do Kaboom para o chão e paredes
 loadSpriteAtlas("https://kaboomjs.com/sprites/dungeon.png", {
     "floor": { x: 16, y: 64, width: 48, height: 48, sliceX: 3, sliceY: 3 },
     "wall": { x: 16, y: 16, width: 16, height: 16 },
     "wall_top": { x: 16, y: 0, width: 16, height: 16 },
-    "wall_left": { x: 16, y: 128, width: 16, height: 16 },
-    "wall_right": { x: 0, y: 128, width: 16, height: 16 },
-    "wall_topleft": { x: 32, y: 128, width: 16, height: 16 },
-    "wall_topright": { x: 48, y: 128, width: 16, height: 16 },
-    "wall_botleft": { x: 32, y: 144, width: 16, height: 16 },
-    "wall_botright": { x: 48, y: 144, width: 16, height: 16 },
 });
 
-// 3. Definição da Cena
 scene("game", () => {
+    // Camadas de renderização
+    const LAYERS = { bg: -1, game: 0, ui: 1 };
+    const setLayer = (l) => z(LAYERS[l]);
 
-    // --- CORREÇÃO: DEFINIR AS LAYERS PRIMEIRO ---
-    const layersMap = {
-        "bg": -1,
-        "game": 0,
-        "ui": 1,
-    }
-    
-    function layer(l) {
-        return z(layersMap[l])
-    }
-    // ---------------------------------------------
+    // 3. Definição das Armas
+    const weapons = {
+        "graveto": { damage: 1, range: 25, color: rgb(139, 69, 19), name: "Graveto Inútil", speed: 0.2 },
+        "spectral": { damage: 50, range: 90, color: rgb(0, 255, 255), name: "Lâmina VMZ", speed: 0.05 }
+    };
 
-    // Agora podemos criar o Mapa
-    const map = addLevel([
-        "cttttttttttttttttttttd",
-        "l....................r",
-        "l....................r",
-        "l.....O..............r",
-        "l....................r",
-        "l...W................r",
-        "l....................r",
-        "l..........N.........r",
-        "l....................r",
-        "l...S................r",
-        "l....................r",
-        "attttttttttttttttttttb",
-    ], {
-        tileWidth: 16,
-        tileHeight: 16,
-        tiles: {
-            ".": () => [ sprite("floor", { frame: ~~rand(0, 8) }), layer("bg") ],
-            "w": () => [ sprite("wall"), area(), body({ isStatic: true }), layer("game") ],
-            "t": () => [ sprite("wall_top"), area({ shape: new Rect(vec2(0, 12), 16, 4) }), body({ isStatic: true }), layer("game") ],
-            "l": () => [ sprite("wall_left"), area({ shape: new Rect(vec2(0), 4, 16) }), body({ isStatic: true }), layer("game") ],
-            "r": () => [ sprite("wall_right"), area({ shape: new Rect(vec2(12, 0), 4, 16) }), body({ isStatic: true }), layer("game") ],
-            "c": () => [ sprite("wall_topleft"), area(), body({ isStatic: true }), layer("game") ],
-            "d": () => [ sprite("wall_topright"), area(), body({ isStatic: true }), layer("game") ],
-            "a": () => [ sprite("wall_botleft"), area(), body({ isStatic: true }), layer("game") ],
-            "b": () => [ sprite("wall_botright"), area(), body({ isStatic: true }), layer("game") ],
-            "O": () => [ "spawn_old_man" ], 
-            "W": () => [ "spawn_wizard" ],
-            "N": () => [ "spawn_ninja" ],
-            "S": () => [ "spawn_samurai" ],
-        },
-    });
-
-    // --- JOGADOR ---
+    // 4. Criação do Jogador (Antes do Mapa para evitar ReferenceError)
     const player = add([
         sprite("hero_spectral"),
-        pos(100, 100),
-        area({ shape: new Rect(vec2(10, 10), 20, 30) }),
+        pos(150, 150),
+        area({ shape: new Rect(vec2(10, 5), 15, 25) }),
         body(),
         anchor("center"),
-        scale(0.8),
-        layer("game"),
+        setLayer("game"),
         {
-            speed: 140,
-            dir: vec2(0, 0),
+            speed: 150,
             weapon: "graveto",
-            canDash: true,
+            canDash: true
         },
         "player"
     ]);
 
-    const weaponSprite = player.add([
-        rect(4, 12),
-        pos(10, 5),
+    // Visual da arma inicial
+    const weaponVisual = player.add([
+        rect(2, 10),
+        pos(12, 8),
         color(139, 69, 19),
         anchor("bot"),
         rotate(90),
-        "weapon_visual"
+        "weapon_node"
     ]);
 
-    // --- COMBATE ---
-    const weapons = {
-        "graveto": { damage: 1, range: 20, color: rgb(139, 69, 19), name: "Graveto Podre", speed: 0.1 },
-        "spectral": { damage: 20, range: 80, color: rgb(0, 255, 255), name: "Lâmina da Alma", speed: 0.02 }
-    };
+    // 5. O Mapa (Agora ele pode "enxergar" o resto do código)
+    addLevel([
+        "tttttttttttttttttttt",
+        "t..................t",
+        "t..................t",
+        "t.....M............t",
+        "t..................t",
+        "t...........W......t",
+        "t..................t",
+        "t......N...........t",
+        "t..................t",
+        "t...........S......t",
+        "tttttttttttttttttttt",
+    ], {
+        tileWidth: 16,
+        tileHeight: 16,
+        tiles: {
+            ".": () => [ sprite("floor", { frame: ~~rand(0, 8) }), setLayer("bg") ],
+            "t": () => [ sprite("wall_top"), area(), body({ isStatic: true }), setLayer("game") ],
+            // Marcadores de NPCs
+            "M": () => [ "spawn_master" ],
+            "N": () => [ "spawn_ninja" ],
+            "W": () => [ "spawn_wizard" ],
+            "S": () => [ "spawn_enemy" ],
+        },
+    });
 
-    function attack() {
+    // 6. Spawning dos NPCs nos lugares marcados
+    onAdd("spawn_master", (m) => {
+        add([ sprite("old_master"), pos(m.pos), area(), body({isStatic:true}), anchor("center"), "npc", { msg: "O graveto não corta almas. Pegue a Lâmina VMZ!" } ]);
+    });
+    onAdd("spawn_ninja", (n) => {
+        add([ sprite("ninja_green"), pos(n.pos), area(), body({isStatic:true}), anchor("center"), "npc", { msg: "Time Zueira no comando." } ]);
+    });
+    onAdd("spawn_wizard", (w) => {
+        add([ sprite("wizard"), pos(w.pos), area(), body({isStatic:true}), anchor("center"), "npc", { msg: "Cuidado com o Samurai Vermelho!" } ]);
+    });
+    onAdd("spawn_enemy", (s) => {
+        add([ sprite("samurai_red"), pos(s.pos), area(), body(), anchor("center"), health(100), "enemy" ]);
+    });
+
+    // 7. Sistema de Combate e Movimento
+    function doAttack() {
         const w = weapons[player.weapon];
-        const angle = player.flipX ? -130 : 130;
-        weaponSprite.angle = angle;
-        tween(angle, player.flipX ? 0 : 0, w.speed, (val) => weaponSprite.angle = val, easings.easeOutQuad);
-
-        const attackPos = player.pos.add(vec2(player.flipX ? -20 : 20, 0));
+        shake(2);
         
-        if(player.weapon === "spectral") {
-            add([
-                rect(w.range, 5),
-                pos(attackPos),
-                anchor("left"),
-                color(0, 255, 255),
-                lifespan(0.1),
-                rotate(player.flipX ? 180 : 0),
-                layer("game")
-            ])
-        }
+        // Animação simples
+        weaponVisual.angle = player.flipX ? -120 : 120;
+        wait(w.speed, () => weaponVisual.angle = 90);
 
+        // Dano
         const enemies = get("enemy");
         enemies.forEach(e => {
-            if (e.pos.dist(player.pos) < w.range) {
+            if (player.pos.dist(e.pos) < w.range) {
                 e.hurt(w.damage);
                 addKaboom(e.pos);
-                shake(2);
             }
         });
-
-        if (player.weapon === "graveto") {
-            add([
-                text("ploc", { size: 12 }),
-                pos(player.pos.sub(0, 20)),
-                lifespan(0.5),
-                move(UP, 50),
-                color(255, 255, 255),
-                layer("ui")
-            ]);
-        }
     }
 
-    // --- DASH ---
-    onKeyPress("shift", () => {
-        if (player.canDash) {
-            player.canDash = false;
-            const dashSpeed = 600;
-            const currentMove = isKeyDown("left") ? LEFT : isKeyDown("right") ? RIGHT : isKeyDown("up") ? UP : isKeyDown("down") ? DOWN : RIGHT;
-            
-            const ghost = add([
-                sprite("hero_spectral"),
-                pos(player.pos),
-                opacity(0.5),
-                anchor("center"),
-                scale(0.8),
-                lifespan(0.2),
-                layer("game")
-            ]);
-            if(player.flipX) ghost.flipX = true;
-
-            tween(player.speed, dashSpeed, 0.1, (val) => {}, easings.easeOutQuad).then(() => {
-                 player.speed = 140;
-                 wait(1, () => player.canDash = true);
-            });
-            player.move(currentMove.scale(50));
-        }
-    });
-
-    onKeyPress("space", attack);
-
-    // --- CONTROLES ---
-    onKeyDown("left", () => {
-        player.move(-player.speed, 0);
-        player.flipX = true;
-        weaponSprite.pos = vec2(-10, 5);
-    });
-    onKeyDown("right", () => {
-        player.move(player.speed, 0);
-        player.flipX = false;
-        weaponSprite.pos = vec2(10, 5);
-    });
+    // Comandos
+    onKeyDown("left", () => { player.move(-player.speed, 0); player.flipX = true; weaponVisual.pos = vec2(-12, 8); });
+    onKeyDown("right", () => { player.move(player.speed, 0); player.flipX = false; weaponVisual.pos = vec2(12, 8); });
     onKeyDown("up", () => player.move(0, -player.speed));
     onKeyDown("down", () => player.move(0, player.speed));
+    
+    onKeyPress("space", doAttack);
 
-    player.onUpdate(() => {
-        camPos(player.pos);
-    });
-
-    // --- NPCS ---
-    for (const t of get("spawn_old_man")) {
-        add([
-            sprite("old_master"),
-            pos(t.pos.add(8, 8)),
-            area(),
-            body({ isStatic: true }),
-            anchor("center"),
-            layer("game"),
-            "npc",
-            { msg: "Pegue esta Lâmina. O graveto é patético." }
-        ]);
-        add([ text("Mestre", { size: 10 }), pos(t.pos.sub(-8, 20)), anchor("center"), layer("ui") ]);
-    }
-
-    for (const t of get("spawn_ninja")) {
-        add([
-            sprite("ninja_green"),
-            pos(t.pos.add(8, 8)),
-            area(),
-            body({ isStatic: true }),
-            anchor("center"),
-            layer("game"),
-            "npc",
-            { msg: "O Time Zueira observa..." }
-        ]);
-    }
-
-    for (const t of get("spawn_wizard")) {
-        add([
-            sprite("wizard"),
-            pos(t.pos.add(8, 8)),
-            area(),
-            body({ isStatic: true }),
-            anchor("center"),
-            layer("game"),
-            "npc",
-            { msg: "A magia flui neste lugar." }
-        ]);
-    }
-
-    for (const t of get("spawn_samurai")) {
-        add([
-            sprite("samurai_red"),
-            pos(t.pos.add(8, 8)),
-            area(),
-            body(),
-            anchor("center"),
-            health(10),
-            state("idle"),
-            layer("game"),
-            "enemy",
-            { speed: 50 }
-        ]);
-    }
-
-    onUpdate("enemy", (e) => {
-        if(e.pos.dist(player.pos) < 100) {
-            e.move(player.pos.sub(e.pos).unit().scale(e.speed));
-            e.flipX = player.pos.x < e.pos.x;
-        }
-    });
-
+    // Interação (Tecla E)
     onKeyPress("e", () => {
         get("npc").forEach(npc => {
-            if (player.pos.dist(npc.pos) < 50) {
-                add([
-                    text(npc.msg, { size: 12, width: 200 }),
-                    pos(npc.pos.sub(0, 40)),
-                    anchor("center"),
-                    lifespan(2),
-                    color(255, 255, 0),
-                    outline(2, black()),
-                    layer("ui")
-                ]);
-
-                if(npc.msg.includes("Lâmina")) {
+            if (player.pos.dist(npc.pos) < 40) {
+                add([ text(npc.msg, { size: 8, width: 150 }), pos(npc.pos.sub(0, 30)), anchor("center"), lifespan(2), setLayer("ui") ]);
+                
+                if (npc.msg.includes("VMZ")) {
                     player.weapon = "spectral";
-                    weaponSprite.destroy();
-                    player.add([ circle(5), color(0, 255, 255), pos(10, 0), "weapon_glow" ]);
-                    shake(5);
+                    weaponVisual.color = rgb(0, 255, 255);
+                    weaponVisual.width = 4;
                 }
             }
         });
     });
 
-    // --- UI ---
-    add([ sprite("logo_tz"), pos(20, 20), scale(0.1), fixed(), layer("ui") ]);
+    // 8. Câmera e UI
+    player.onUpdate(() => camPos(player.pos));
 
-    const weaponText = add([
-        text("Arma: Graveto", { size: 18, font: "monospace" }),
-        pos(60, 25),
+    add([ sprite("logo_tz"), pos(10, 10), scale(0.05), fixed(), setLayer("ui") ]);
+    
+    const uiInfo = add([
+        text("Arma: Graveto", { size: 10 }),
+        pos(40, 15),
         fixed(),
-        color(255, 255, 255),
-        layer("ui")
+        setLayer("ui")
     ]);
 
     onUpdate(() => {
-        const w = weapons[player.weapon];
-        weaponText.text = `Arma: ${w.name}`;
-        weaponText.color = w.color;
+        uiInfo.text = "Arma: " + weapons[player.weapon].name;
+        uiInfo.color = weapons[player.weapon].color;
     });
 
-    add([
-        rect(width(), height()),
-        pos(0,0),
-        color(0,0,20),
-        opacity(0.3),
-        fixed(),
-        layer("ui"),
-        "darkness"
-    ]);
+    // IA do Inimigo
+    onUpdate("enemy", (e) => {
+        if (e.pos.dist(player.pos) < 100) {
+            e.move(player.pos.sub(e.pos).unit().scale(40));
+        }
+    });
 
-    add([
-        text("[WASD] Mover | [ESPAÇO] Atacar | [SHIFT] Dash | [E] Falar", { size: 12 }),
-        pos(width()/2, height() - 30),
-        anchor("center"),
-        fixed(),
-        layer("ui")
-    ]);
+    on("death", "enemy", (e) => {
+        destroy(e);
+        add([ text("BOSS DERROTADO", {size: 20}), pos(center()), anchor("center"), fixed() ]);
+    });
 });
 
 go("game");
