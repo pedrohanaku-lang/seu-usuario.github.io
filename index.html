@@ -1,183 +1,140 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Time Zueira RPG - Final Fix</title>
+    <title>Time Zueira RPG</title>
     <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
-    </style>
 </head>
-<body>
+<body style="margin:0; background:#000;">
 <script>
-// 1. Inicialização do Motor
-kaboom({
-    scale: 3,
-    background: [0, 0, 0],
-    crisp: true,
+// 1. Inicialização direta
+const k = kaboom({
+    background: [10, 10, 20],
+    scale: 2
 })
 
+// 2. Carregar Sprites (Nomes fixos para evitar erro de referência)
+loadSprite("hero", "_Hugkw.gif")
+loadSprite("mestre", "XSuwrQ.gif")
+loadSprite("ninja", "Ru5PS2.gif")
+loadSprite("inimigo", "sRNxiP.gif")
+loadSprite("logo", "image_da46a4.png")
 
+scene("main", () => {
 
-// Tileset padrão do Kaboom para o chão e paredes
-loadSpriteAtlas("https://kaboomjs.com/sprites/dungeon.png", {
-    "floor": { x: 16, y: 64, width: 48, height: 48, sliceX: 3, sliceY: 3 },
-    "wall": { x: 16, y: 16, width: 16, height: 16 },
-    "wall_top": { x: 16, y: 0, width: 16, height: 16 },
-});
-
-scene("game", () => {
-    // Camadas de renderização
-    const LAYERS = { bg: -1, game: 0, ui: 1 };
-    const setLayer = (l) => z(LAYERS[l]);
-
-    // 3. Definição das Armas
-    const weapons = {
-        "graveto": { damage: 1, range: 25, color: rgb(139, 69, 19), name: "Graveto Inútil", speed: 0.2 },
-        "spectral": { damage: 50, range: 90, color: rgb(0, 255, 255), name: "Lâmina VMZ", speed: 0.05 }
-    };
-
-    // 4. Criação do Jogador (Antes do Mapa para evitar ReferenceError)
+    // Jogador
     const player = add([
-        sprite("hero_spectral"),
-        pos(150, 150),
-        area({ shape: new Rect(vec2(10, 5), 15, 25) }),
+        sprite("hero"),
+        pos(100, 100),
+        area(),
         body(),
         anchor("center"),
-        setLayer("game"),
-        {
-            speed: 150,
-            weapon: "graveto",
-            canDash: true
-        },
-        "player"
-    ]);
+        { 
+            arma: "fraca",
+            speed: 160 
+        }
+    ])
 
-    // Visual da arma inicial
-    const weaponVisual = player.add([
-        rect(2, 10),
-        pos(12, 8),
-        color(139, 69, 19),
+    // Visual da Espada (Simples, anexada ao player)
+    const sword = player.add([
+        rect(5, 20),
+        pos(15, 0),
+        color(100, 100, 100),
         anchor("bot"),
-        rotate(90),
-        "weapon_node"
-    ]);
+        rotate(0)
+    ])
 
-    // 5. O Mapa (Agora ele pode "enxergar" o resto do código)
-    addLevel([
-        "tttttttttttttttttttt",
-        "t..................t",
-        "t..................t",
-        "t.....M............t",
-        "t..................t",
-        "t...........W......t",
-        "t..................t",
-        "t......N...........t",
-        "t..................t",
-        "t...........S......t",
-        "tttttttttttttttttttt",
-    ], {
-        tileWidth: 16,
-        tileHeight: 16,
-        tiles: {
-            ".": () => [ sprite("floor", { frame: ~~rand(0, 8) }), setLayer("bg") ],
-            "t": () => [ sprite("wall_top"), area(), body({ isStatic: true }), setLayer("game") ],
-            // Marcadores de NPCs
-            "M": () => [ "spawn_master" ],
-            "N": () => [ "spawn_ninja" ],
-            "W": () => [ "spawn_wizard" ],
-            "S": () => [ "spawn_enemy" ],
-        },
-    });
+    // --- NPCs e Inimigos ---
+    
+    // Mestre que dá a arma
+    add([
+        sprite("mestre"),
+        pos(300, 100),
+        area(),
+        "npc_mestre"
+    ])
 
-    // 6. Spawning dos NPCs nos lugares marcados
-    onAdd("spawn_master", (m) => {
-        add([ sprite("old_master"), pos(m.pos), area(), body({isStatic:true}), anchor("center"), "npc", { msg: "O graveto não corta almas. Pegue a Lâmina VMZ!" } ]);
-    });
-    onAdd("spawn_ninja", (n) => {
-        add([ sprite("ninja_green"), pos(n.pos), area(), body({isStatic:true}), anchor("center"), "npc", { msg: "Time Zueira no comando." } ]);
-    });
-    onAdd("spawn_wizard", (w) => {
-        add([ sprite("wizard"), pos(w.pos), area(), body({isStatic:true}), anchor("center"), "npc", { msg: "Cuidado com o Samurai Vermelho!" } ]);
-    });
-    onAdd("spawn_enemy", (s) => {
-        add([ sprite("samurai_red"), pos(s.pos), area(), body(), anchor("center"), health(100), "enemy" ]);
-    });
+    // Inimigo
+    const boss = add([
+        sprite("inimigo"),
+        pos(400, 300),
+        area(),
+        health(50),
+        "enemy"
+    ])
 
-    // 7. Sistema de Combate e Movimento
-    function doAttack() {
-        const w = weapons[player.weapon];
-        shake(2);
-        
-        // Animação simples
-        weaponVisual.angle = player.flipX ? -120 : 120;
-        wait(w.speed, () => weaponVisual.angle = 90);
+    // --- Lógica de Combate ---
+    
+    onKeyPress("space", () => {
+        // Animação da espada
+        tween(0, 90, 0.1, (v) => sword.angle = v, easings.easeOutQuad)
+        wait(0.1, () => sword.angle = 0)
 
         // Dano
-        const enemies = get("enemy");
-        enemies.forEach(e => {
-            if (player.pos.dist(e.pos) < w.range) {
-                e.hurt(w.damage);
-                addKaboom(e.pos);
-            }
-        });
-    }
-
-    // Comandos
-    onKeyDown("left", () => { player.move(-player.speed, 0); player.flipX = true; weaponVisual.pos = vec2(-12, 8); });
-    onKeyDown("right", () => { player.move(player.speed, 0); player.flipX = false; weaponVisual.pos = vec2(12, 8); });
-    onKeyDown("up", () => player.move(0, -player.speed));
-    onKeyDown("down", () => player.move(0, player.speed));
-    
-    onKeyPress("space", doAttack);
-
-    // Interação (Tecla E)
-    onKeyPress("e", () => {
-        get("npc").forEach(npc => {
-            if (player.pos.dist(npc.pos) < 40) {
-                add([ text(npc.msg, { size: 8, width: 150 }), pos(npc.pos.sub(0, 30)), anchor("center"), lifespan(2), setLayer("ui") ]);
-                
-                if (npc.msg.includes("VMZ")) {
-                    player.weapon = "spectral";
-                    weaponVisual.color = rgb(0, 255, 255);
-                    weaponVisual.width = 4;
+        if (player.arma === "forte") {
+            const targets = get("enemy")
+            targets.forEach(t => {
+                if (player.pos.dist(t.pos) < 60) {
+                    t.hurt(10)
+                    shake(5)
                 }
-            }
-        });
-    });
-
-    // 8. Câmera e UI
-    player.onUpdate(() => camPos(player.pos));
-
-    add([ sprite("logo_tz"), pos(10, 10), scale(0.05), fixed(), setLayer("ui") ]);
-    
-    const uiInfo = add([
-        text("Arma: Graveto", { size: 10 }),
-        pos(40, 15),
-        fixed(),
-        setLayer("ui")
-    ]);
-
-    onUpdate(() => {
-        uiInfo.text = "Arma: " + weapons[player.weapon].name;
-        uiInfo.color = weapons[player.weapon].color;
-    });
-
-    // IA do Inimigo
-    onUpdate("enemy", (e) => {
-        if (e.pos.dist(player.pos) < 100) {
-            e.move(player.pos.sub(e.pos).unit().scale(40));
+            })
+        } else {
+            add([
+                text("Dano 0 - Fale com o mestre", { size: 12 }),
+                pos(player.pos),
+                lifespan(0.5),
+                move(UP, 50)
+            ])
         }
-    });
+    })
 
-    on("death", "enemy", (e) => {
-        destroy(e);
-        add([ text("BOSS DERROTADO", {size: 20}), pos(center()), anchor("center"), fixed() ]);
-    });
-});
+    // --- Interação ---
+    
+    onKeyPress("e", () => {
+        if (player.pos.dist(get("npc_mestre")[0].pos) < 50) {
+            player.arma = "forte"
+            sword.color = rgb(0, 255, 255) // Espada brilha
+            add([
+                text("VOCÊ RECEBEU A LÂMINA VMZ!", { size: 16 }),
+                pos(center()),
+                anchor("center"),
+                lifespan(2)
+            ])
+        }
+    })
 
-go("game");
+    // --- Controles ---
+    
+    onKeyDown("left", () => { player.move(-player.speed, 0); player.flipX = true })
+    onKeyDown("right", () => { player.move(player.speed, 0); player.flipX = false })
+    onKeyDown("up", () => { player.move(0, -player.speed) })
+    onKeyDown("down", () => { player.move(0, player.speed) })
+
+    // Câmera segue o herói
+    onUpdate(() => {
+        camPos(player.pos)
+    })
+
+    // Vitória
+    boss.onDeath(() => {
+        destroy(boss)
+        add([
+            sprite("logo"),
+            pos(center()),
+            anchor("center"),
+            fixed()
+        ])
+    })
+
+    // HUD Fixo
+    add([
+        text("Aperte E perto do Mestre | ESPAÇO para atacar", { size: 10 }),
+        pos(10, 10),
+        fixed()
+    ])
+})
+
+go("main")
 </script>
 </body>
 </html>
-
-
