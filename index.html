@@ -1,403 +1,454 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Samurai Rogue</title>
+<meta charset="utf-8">
+<title>Skul Like Prototype</title>
 <style>
-body{margin:0;background:#000;display:flex;justify-content:center;align-items:center;height:100vh}
-canvas{background:#111;border:2px solid #0f0}
+html,body { margin:0; background:#000; }
 </style>
 </head>
 <body>
-<canvas id="c" width="900" height="600"></canvas>
 
+<script src="https://unpkg.com/kaboom/dist/kaboom.js"></script>
 <script>
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
+kaboom({
+    width: 960,
+    height: 540,
+    scale: 1,
+    background: [20,20,25],
+})
 
-const W=900,H=600;
+/* --------------------------
+   PLAYER
+---------------------------*/
 
-let mouse={x:0,y:0,down:false};
+const player = add([
+    rect(24,32),
+    color(80,180,255),
+    pos(200,300),
+    area(),
+    body(),
+    anchor("center"),
+    {
+        hp: 100,
+    },
+    "player"
+])
 
-let player;
-let enemies=[];
-let bullets=[];
-let enemyBullets=[];
-let allies=[];
+const SPEED = 220
 
-let ult=0;
-let maxUlt=100;
-let usingUlt=false;
-let ultTimer=0;
+onKeyDown("a",()=>player.move(-SPEED,0))
+onKeyDown("d",()=>player.move(SPEED,0))
+onKeyDown("w",()=>player.move(0,-SPEED))
+onKeyDown("s",()=>player.move(0,SPEED))
 
-const sword = {
-    angle:0,
-    len:80,
-    width:10,
-    active:false,
-};
+/* --------------------------
+   ESPADA (igual ao que tu descreveste)
+---------------------------*/
 
-canvas.addEventListener("mousemove",e=>{
-    const r=canvas.getBoundingClientRect();
-    mouse.x=e.clientX-r.left;
-    mouse.y=e.clientY-r.top;
-});
+let cutting = false
 
-canvas.addEventListener("mousedown",e=>{
-    if(e.button===0) mouse.down=true;
-});
-canvas.addEventListener("mouseup",e=>{
-    if(e.button===0) mouse.down=false;
-});
+const sword = add([
+    rect(8,38),
+    color(255,255,255),
+    anchor("bot"),
+    pos(player.pos),
+    rotate(0),
+    area({ shape: new Rect(vec2(-4,-38),8,38) }),
+    {
+        active:false,
+    },
+    "sword"
+])
 
-let keys={};
-window.addEventListener("keydown",e=>{
-    keys[e.key.toLowerCase()]=true;
+onMouseDown(() => {
+    cutting = true
+    sword.active = true
+})
 
-    if(e.key.toLowerCase()==="g" && ult>=maxUlt && !usingUlt){
-        usingUlt=true;
-        ultTimer=30;
-        ult=0;
-    }
-});
-window.addEventListener("keyup",e=>{
-    keys[e.key.toLowerCase()]=false;
-});
+onMouseRelease(() => {
+    cutting = false
+    sword.active = false
+})
 
-function reset(){
-    player={x:450,y:300,r:18,speed:4,hp:5};
+sword.onUpdate(() => {
 
-    enemies=[];
-    bullets=[];
-    enemyBullets=[];
-    allies=[];
+    if(!cutting) return
 
-    spawnWave();
+    const dir = mousePos().sub(player.pos)
 
-    ult=0;
+    const ang = dir.angle()
+
+    sword.pos = player.pos.add(
+        dir.unit().scale(26)
+    )
+
+    sword.angle = ang
+})
+
+/* --------------------------
+   CORTE VISUAL
+---------------------------*/
+
+function spawnSlash(pos, ang){
+
+    const s = add([
+        rect(40,8),
+        pos(pos),
+        anchor("center"),
+        rotate(ang),
+        color(255,120,120),
+        opacity(0.8),
+        lifespan(0.08),
+    ])
 }
 
-function spawnWave(){
-    for(let i=0;i<4;i++) spawnEnemy("shooter");
-    spawnEnemy("dasher");
-    spawnBoss();
-}
+/* --------------------------
+   DAMAGE
+---------------------------*/
 
-function spawnEnemy(type){
-    let e={
-        x:Math.random()*W,
-        y:Math.random()*H,
-        r:16,
-        type,
-        hp:type==="dasher"?4:3,
-        t:0
-    };
-    enemies.push(e);
-}
+sword.onCollide("enemy", (e) => {
+    if(!sword.active) return
+    e.hurt(10)
+    spawnSlash(sword.pos, sword.angle)
+})
 
-function spawnBoss(){
-    enemies.push({
-        x:W/2,
-        y:120,
-        w:160,
-        h:120,
-        isBoss:true,
-        hp:120,
-        t:0
-    });
-}
+sword.onCollide("boss", (b) => {
+    if(!sword.active) return
+    b.hurt(8)
+    spawnSlash(sword.pos, sword.angle)
+})
 
-function spawnAlly(){
-    allies.push({
-        x:player.x+30,
-        y:player.y,
-        t:0
-    });
-}
+/* --------------------------
+   ENEMY FACTORY (MOVESETS)
+---------------------------*/
 
-function shootEnemy(e){
-    enemyBullets.push({
-        x:e.x,
-        y:e.y,
-        vx:(player.x-e.x)/40,
-        vy:(player.y-e.y)/40
-    });
-}
+function createEnemy(type, p){
 
-function update(){
+    const enemy = add([
+        rect(26,26),
+        pos(p),
+        anchor("center"),
+        area(),
+        body(),
+        color(255,120,80),
+        {
+            type,
+            hp: type=="brute"?50:30,
+            state:"idle",
+            timer:0,
+        },
+        "enemy"
+    ])
 
-    // player
-    if(keys.a) player.x-=player.speed;
-    if(keys.d) player.x+=player.speed;
-    if(keys.w) player.y-=player.speed;
-    if(keys.s) player.y+=player.speed;
-
-    player.x=Math.max(20,Math.min(W-20,player.x));
-    player.y=Math.max(20,Math.min(H-20,player.y));
-
-    // sword follow mouse while holding
-    sword.active = mouse.down;
-
-    if(sword.active){
-        sword.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
-        checkSwordHits();
-    }
-
-    // enemies
-    for(let e of enemies){
-
-        e.t++;
-
-        if(e.isBoss){
-            if(e.t%25===0){
-                for(let a=0;a<Math.PI*2;a+=Math.PI/6){
-                    enemyBullets.push({
-                        x:e.x,
-                        y:e.y,
-                        vx:Math.cos(a)*4,
-                        vy:Math.sin(a)*4
-                    });
-                }
-            }
-        }else if(e.type==="shooter"){
-            if(e.t%60===0) shootEnemy(e);
-        }else if(e.type==="dasher"){
-            let dx=player.x-e.x;
-            let dy=player.y-e.y;
-            let d=Math.hypot(dx,dy)||1;
-            e.x+=dx/d*2.5;
-            e.y+=dy/d*2.5;
-        }
+    enemy.hurt = (d)=>{
+        enemy.hp -= d
+        if(enemy.hp<=0) destroy(enemy)
     }
 
-    // enemy bullets
-    for(let b of enemyBullets){
-        b.x+=b.vx;
-        b.y+=b.vy;
-    }
+    enemy.onUpdate(()=>enemyAI[enemy.type](enemy))
 
-    // allies
-    for(let a of allies){
-        a.t++;
-        a.x+= (player.x-a.x)*0.05;
-        a.y+= (player.y-a.y)*0.05;
-
-        if(a.t%40===0){
-            bullets.push({
-                x:a.x,
-                y:a.y,
-                vx:(nearestEnemyX(a)-a.x)/25,
-                vy:(nearestEnemyY(a)-a.y)/25
-            });
-        }
-    }
-
-    // player bullets
-    for(let b of bullets){
-        b.x+=b.vx;
-        b.y+=b.vy;
-    }
-
-    updateCollisions();
-
-    // ultimate
-    if(usingUlt){
-        ultTimer--;
-        if(ultTimer<=0) usingUlt=false;
-    }
-
+    return enemy
 }
 
-function nearestEnemyX(a){
-    if(enemies.length===0) return a.x;
-    return enemies[0].x;
-}
-function nearestEnemyY(a){
-    if(enemies.length===0) return a.y;
-    return enemies[0].y;
-}
+/* --------------------------
+   MOVESETS (Skul style)
+---------------------------*/
 
-// real sword segment collision
-function checkSwordHits(){
+const enemyAI = {
 
-    let x1=player.x;
-    let y1=player.y;
-    let x2=player.x+Math.cos(sword.angle)*sword.len;
-    let y2=player.y+Math.sin(sword.angle)*sword.len;
+    assassin(e){
 
-    // enemies
-    for(let i=enemies.length-1;i>=0;i--){
-        let e=enemies[i];
+        e.timer -= dt()
 
-        if(e.isBoss){
-            if(lineRect(x1,y1,x2,y2,e.x-e.w/2,e.y-e.h/2,e.w,e.h)){
-                e.hp--;
-                gainUlt(2);
-            }
-        }else{
-            let d=distToSegment(e.x,e.y,x1,y1,x2,y2);
-            if(d<e.r){
-                e.hp--;
-                gainUlt(2);
+        if(e.state==="idle"){
+            if(e.pos.dist(player.pos) < 200){
+                e.state="windup"
+                e.timer=0.4
             }
         }
 
-        if(e.hp<=0) enemies.splice(i,1);
-    }
-
-    // bullets cut
-    for(let i=enemyBullets.length-1;i>=0;i--){
-        let b=enemyBullets[i];
-        let d=distToSegment(b.x,b.y,x1,y1,x2,y2);
-        if(d<6){
-            if(Math.random()<0.3){
-                enemyBullets.splice(i,1);
-                gainUlt(1);
+        if(e.state==="windup"){
+            if(e.timer<=0){
+                e.state="dash"
+                e.vel = player.pos.sub(e.pos).unit().scale(520)
             }
         }
-    }
 
-}
-
-function gainUlt(v){
-    ult=Math.min(maxUlt,ult+v);
-}
-
-function updateCollisions(){
-
-    // ult hit
-    if(usingUlt){
-        for(let i=enemies.length-1;i>=0;i--){
-            enemies[i].hp-=2;
-            if(enemies[i].hp<=0) enemies.splice(i,1);
-        }
-        enemyBullets=[];
-    }
-
-    // bullets hit enemies
-    for(let i=bullets.length-1;i>=0;i--){
-        let b=bullets[i];
-        for(let j=enemies.length-1;j>=0;j--){
-            let e=enemies[j];
-            let d=Math.hypot(b.x-e.x,b.y-e.y);
-            if(d<20){
-                e.hp--;
-                bullets.splice(i,1);
-                if(e.hp<=0) enemies.splice(j,1);
-                break;
+        if(e.state==="dash"){
+            e.move(e.vel)
+            if(e.timer<=-0.2){
+                e.state="recover"
+                e.timer=0.4
             }
         }
+
+        if(e.state==="recover"){
+            if(e.timer<=0){
+                e.state="idle"
+            }
+        }
+
+    },
+
+    ranger(e){
+
+        e.timer -= dt()
+
+        if(e.state==="idle"){
+            if(e.timer<=0){
+                shootEnemyBullet(e)
+                e.timer=1.2
+            }
+        }
+
+    },
+
+    brute(e){
+
+        e.timer -= dt()
+
+        if(e.state==="idle"){
+            if(e.pos.dist(player.pos)<120){
+                e.state="slam"
+                e.timer=0.6
+            }
+        }
+
+        if(e.state==="slam"){
+            if(e.timer<=0){
+                spawnShockwave(e.pos)
+                e.state="idle"
+            }
+        }
+
     }
 
 }
 
-// helpers
-function distToSegment(px,py,x1,y1,x2,y2){
-    const l2=(x2-x1)**2+(y2-y1)**2;
-    if(l2===0) return Math.hypot(px-x1,py-y1);
-    let t=((px-x1)*(x2-x1)+(py-y1)*(y2-y1))/l2;
-    t=Math.max(0,Math.min(1,t));
-    const x=x1+t*(x2-x1);
-    const y=y1+t*(y2-y1);
-    return Math.hypot(px-x,py-y);
+/* --------------------------
+   BULLET
+---------------------------*/
+
+function shootEnemyBullet(e){
+
+    const dir = player.pos.sub(e.pos).unit()
+
+    add([
+        rect(6,6),
+        pos(e.pos),
+        area(),
+        color(255,60,60),
+        move(dir,260),
+        offscreen({destroy:true}),
+        "enemyBullet"
+    ])
 }
 
-function lineRect(x1,y1,x2,y2,rx,ry,rw,rh){
-    return lineLine(x1,y1,x2,y2,rx,ry,rx+rw,ry) ||
-           lineLine(x1,y1,x2,y2,rx,ry,rx,ry+rh) ||
-           lineLine(x1,y1,x2,y2,rx+rw,ry,rx+rw,ry+rh) ||
-           lineLine(x1,y1,x2,y2,rx,ry+rh,rx+rw,ry+rh);
+/* --------------------------
+   SHOCKWAVE
+---------------------------*/
+
+function spawnShockwave(p){
+
+    const w = add([
+        circle(12),
+        pos(p),
+        area(),
+        color(255,200,80),
+        lifespan(0.3),
+        "enemyWave"
+    ])
 }
 
-function lineLine(x1,y1,x2,y2,x3,y3,x4,y4){
-    const uA=((x4-x3)*(y1-y3)-(y4-y3)*(x1-x3))/((y4-y3)*(x2-x1)-(x4-x3)*(y2-y1));
-    const uB=((x2-x1)*(y1-y3)-(y2-y1)*(x1-x3))/((y4-y3)*(x2-x1)-(x4-x3)*(y2-y1));
-    return uA>=0&&uA<=1&&uB>=0&&uB<=1;
+/* --------------------------
+   BOSS (hitbox do corpo inteiro + fases)
+---------------------------*/
+
+const boss = add([
+    rect(80,64),
+    pos(650,300),
+    anchor("center"),
+    area(),     // hitbox do corpo inteiro
+    body(),
+    color(200,60,255),
+    {
+        hp:300,
+        phase:1,
+        state:"idle",
+        timer:0,
+    },
+    "boss"
+])
+
+boss.hurt = (d)=>{
+    boss.hp -= d
+
+    if(boss.hp<=200) boss.phase=2
+    if(boss.hp<=100) boss.phase=3
+
+    if(boss.hp<=0){
+        destroy(boss)
+    }
 }
 
-function draw(){
+boss.onUpdate(()=>bossAI())
 
-    ctx.clearRect(0,0,W,H);
+function bossAI(){
 
-    // player
-    ctx.fillStyle="#0f0";
-    ctx.beginPath();
-    ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
-    ctx.fill();
+    boss.timer -= dt()
 
-    // sword
-    if(sword.active){
-        ctx.strokeStyle="yellow";
-        ctx.lineWidth=sword.width;
-        ctx.beginPath();
-        ctx.moveTo(player.x,player.y);
-        ctx.lineTo(
-            player.x+Math.cos(sword.angle)*sword.len,
-            player.y+Math.sin(sword.angle)*sword.len
-        );
-        ctx.stroke();
+    if(boss.phase===1){
+        simplePattern()
     }
 
-    // enemies
-    for(let e of enemies){
-        if(e.isBoss){
-            ctx.fillStyle="#800";
-            ctx.fillRect(e.x-e.w/2,e.y-e.h/2,e.w,e.h);
-        }else{
-            ctx.fillStyle=e.type==="dasher"?"#f33":"#f0f";
-            ctx.beginPath();
-            ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
-            ctx.fill();
+    if(boss.phase===2){
+        dashPattern()
+    }
+
+    if(boss.phase===3){
+        hellPattern()
+    }
+}
+
+/* --------------------------
+   BOSS PATTERNS
+---------------------------*/
+
+function simplePattern(){
+
+    if(boss.timer<=0){
+        shootBossRing(6,180)
+        boss.timer=2
+    }
+
+}
+
+function dashPattern(){
+
+    if(boss.state==="idle"){
+        boss.state="dash"
+        boss.vel = player.pos.sub(boss.pos).unit().scale(500)
+        boss.timer=0.4
+    }
+
+    if(boss.state==="dash"){
+        boss.move(boss.vel)
+        if(boss.timer<=0){
+            boss.state="idle"
+            boss.timer=1.2
         }
     }
 
-    // bullets
-    ctx.fillStyle="#f44";
-    for(let b of bullets) ctx.fillRect(b.x-2,b.y-2,4,4);
+}
 
-    ctx.fillStyle="#4af";
-    for(let b of enemyBullets) ctx.fillRect(b.x-3,b.y-3,6,6);
+function hellPattern(){
 
-    // allies
-    ctx.fillStyle="#0ff";
-    for(let a of allies){
-        ctx.beginPath();
-        ctx.arc(a.x,a.y,10,0,Math.PI*2);
-        ctx.fill();
-    }
-
-    // ult bar
-    ctx.fillStyle="#fff";
-    ctx.fillRect(20,20,200,10);
-    ctx.fillStyle="#ff0";
-    ctx.fillRect(20,20,200*(ult/maxUlt),10);
-
-    if(usingUlt){
-        ctx.strokeStyle="#ff0";
-        ctx.lineWidth=8;
-        ctx.beginPath();
-        ctx.moveTo(0,H/2);
-        ctx.lineTo(W,H/2);
-        ctx.stroke();
+    if(boss.timer<=0){
+        shootBossRing(14,260)
+        boss.timer=1
     }
 
 }
 
-function loop(){
-    update();
-    draw();
-    requestAnimationFrame(loop);
+/* --------------------------
+   BOSS BULLETS
+---------------------------*/
+
+function shootBossRing(n,speed){
+
+    for(let i=0;i<n;i++){
+
+        const a = i*(Math.PI*2/n)
+        const dir = vec2(Math.cos(a),Math.sin(a))
+
+        add([
+            rect(6,6),
+            pos(boss.pos),
+            area(),
+            color(255,0,200),
+            move(dir,speed),
+            offscreen({destroy:true}),
+            "enemyBullet"
+        ])
+    }
 }
 
-// bônus: ganhar NPC aliado apertando H (upgrade exemplo)
-window.addEventListener("keydown",e=>{
-    if(e.key.toLowerCase()==="h"){
-        spawnAlly();
-    }
-});
+/* --------------------------
+   NPC ALIADO QUE ATIRA
+---------------------------*/
 
-reset();
-loop();
+const ally = add([
+    rect(20,20),
+    pos(150,380),
+    anchor("center"),
+    area(),
+    color(80,255,120),
+    {
+        timer:0,
+    },
+    "ally"
+])
+
+ally.onUpdate(()=>{
+
+    ally.timer-=dt()
+
+    if(ally.timer<=0){
+        shootAlly()
+        ally.timer=0.6
+    }
+
+})
+
+function shootAlly(){
+
+    const target = get("enemy")[0] || boss
+    if(!target) return
+
+    const dir = target.pos.sub(ally.pos).unit()
+
+    add([
+        rect(6,4),
+        pos(ally.pos),
+        area(),
+        color(120,255,120),
+        move(dir,420),
+        offscreen({destroy:true}),
+        "allyBullet"
+    ])
+}
+
+/* --------------------------
+   COLLISIONS
+---------------------------*/
+
+onCollide("allyBullet","enemy",(b,e)=>{
+    e.hurt(8)
+    destroy(b)
+})
+
+onCollide("allyBullet","boss",(b,bo)=>{
+    bo.hurt(6)
+    destroy(b)
+})
+
+/* --------------------------
+   SPAWN
+---------------------------*/
+
+createEnemy("assassin",vec2(400,280))
+createEnemy("ranger",vec2(500,200))
+createEnemy("brute",vec2(450,360))
+
+/* --------------------------
+   CAMERA
+---------------------------*/
+
+player.onUpdate(()=>{
+    camPos(player.pos)
+})
+
 </script>
 </body>
 </html>
