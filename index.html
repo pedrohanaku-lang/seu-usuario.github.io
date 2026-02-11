@@ -1,245 +1,391 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Samurai Roguelike - Fix</title>
+    <title>Time Zueira RPG</title>
+    <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
     <style>
-        body { margin: 0; background: #000; color: #0f0; font-family: 'Courier New', monospace; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-        canvas { border: 2px solid #0f0; background: #050505; display: none; }
-        #ui { position: absolute; text-align: center; background: rgba(0,0,0,0.9); padding: 40px; border: 2px solid #0f0; z-index: 100; }
-        button { background: transparent; color: #0f0; border: 1px solid #0f0; padding: 15px 30px; font-size: 1.2rem; cursor: pointer; text-transform: uppercase; }
-        button:hover { background: #0f0; color: #000; }
-        .info { margin-bottom: 20px; font-size: 0.9rem; line-height: 1.5; }
+        body { margin: 0; overflow: hidden; background-color: #050505; }
     </style>
 </head>
 <body>
-
-    <div id="ui">
-        <h1>SAMURAI OS v1.0</h1>
-        <div class="info">
-            [W,A,S,D] MOVER<br>
-            [MOUSE 1] ATACAR<br>
-            [E] TROCAR ARMA (ESPADA/ARMA)<br>
-            [G] EXECUTAR ESPECIAL (QUANDO CHEIO)
-        </div>
-        <button id="startBtn">INICIALIZAR NÚCLEO</button>
-    </div>
-
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-
 <script>
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-const ui = document.getElementById("ui");
-const startBtn = document.getElementById("startBtn");
+// 1. Inicialização com visual melhorado
+kaboom({
+    scale: 3,
+    background: [10, 10, 15], // Fundo azul escuro profundo
+    crisp: true, // Pixel art nítida
+})
 
-// Estado do Jogo
-let gameRunning = false;
-let player, enemies, bullets, particles;
-let keys = {};
-let mouse = { x: 0, y: 0 };
-let score = 0, stage = 1, special = 0;
+// 2. Carregamento dos Assets (Sprites enviados)
+// Nota: Estou assumindo que os arquivos estão na raiz. Se não, ajuste o caminho.
 
-// Inicialização segura
-startBtn.addEventListener("click", () => {
-    ui.style.display = "none";
-    canvas.style.display = "block";
-    setup();
-    gameRunning = true;
-    requestAnimationFrame(gameLoop);
+// Logos
+loadSprite("logo_vmz", "image_da3f41.png");
+loadSprite("logo_tz", "image_da46a4.png");
+
+// Personagens (GIFs)
+loadSprite("hero_spectral", "_Hugkw.gif"); // Heroi principal
+loadSprite("samurai_hat", "40vMaR.gif");   // NPC 1
+loadSprite("ninja_green", "Ru5PS2.gif");   // NPC 2
+loadSprite("old_master", "XSuwrQ.gif");    // Mestre (dá armas)
+loadSprite("wizard", "KFBLh9.gif");        // Mago
+loadSprite("samurai_red", "sRNxiP.gif");   // Inimigo comum
+
+// Tileset do cenário (Dungeon original para manter o chão)
+loadSpriteAtlas("https://kaboomjs.com/sprites/dungeon.png", {
+    "floor": { x: 16, y: 64, width: 48, height: 48, sliceX: 3, sliceY: 3 },
+    "wall": { x: 16, y: 16, width: 16, height: 16 },
+    "wall_top": { x: 16, y: 0, width: 16, height: 16 },
+    "wall_left": { x: 16, y: 128, width: 16, height: 16 },
+    "wall_right": { x: 0, y: 128, width: 16, height: 16 },
+    "wall_topleft": { x: 32, y: 128, width: 16, height: 16 },
+    "wall_topright": { x: 48, y: 128, width: 16, height: 16 },
+    "wall_botleft": { x: 32, y: 144, width: 16, height: 16 },
+    "wall_botright": { x: 48, y: 144, width: 16, height: 16 },
 });
 
-window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
-window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
-canvas.addEventListener("mousemove", e => {
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = e.clientX - rect.left;
-    mouse.y = e.clientY - rect.top;
-});
+// 3. Definição da Cena Principal
+scene("game", () => {
 
-canvas.addEventListener("mousedown", () => {
-    if (!gameRunning) return;
-    if (player.weapon === "gun") fireBullet();
-    else swordSlash();
-});
-
-function setup() {
-    player = {
-        x: 400, y: 300, 
-        size: 30, speed: 4, 
-        hp: 100, weapon: "sword" 
-    };
-    enemies = [];
-    bullets = [];
-    particles = [];
-    spawnWave();
-}
-
-function spawnWave() {
-    for (let i = 0; i < 3 + stage; i++) {
-        enemies.push({
-            x: Math.random() < 0.5 ? -20 : 820,
-            y: Math.random() * 600,
-            hp: 2 + stage,
-            speed: 1 + Math.random(),
-            size: 20
-        });
-    }
-}
-
-function fireBullet() {
-    const angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-    bullets.push({
-        x: player.x, y: player.y,
-        vx: Math.cos(angle) * 8,
-        vy: Math.sin(angle) * 8
-    });
-}
-
-function swordSlash() {
-    const dist = Math.hypot(mouse.x - player.x, mouse.y - player.y);
-    if (dist < 120) { // Alcance da espada
-        enemies.forEach((en, i) => {
-            if (Math.hypot(en.x - mouse.x, en.y - mouse.y) < 50) {
-                en.hp -= 3;
-                special = Math.min(100, special + 10);
-                createParticles(en.x, en.y, "#f00");
-            }
-        });
-    }
-}
-
-function createParticles(x, y, color) {
-    for (let i = 0; i < 5; i++) {
-        particles.push({
-            x, y, color,
-            vx: (Math.random() - 0.5) * 4,
-            vy: (Math.random() - 0.5) * 4,
-            life: 1.0
-        });
-    }
-}
-
-function update() {
-    // Movimento Player
-    if (keys['w'] && player.y > 0) player.y -= player.speed;
-    if (keys['s'] && player.y < 600) player.y += player.speed;
-    if (keys['a'] && player.x > 0) player.x -= player.speed;
-    if (keys['d'] && player.x < 800) player.x += player.speed;
-
-    // Troca de arma
-    if (keys['e']) {
-        player.weapon = player.weapon === "sword" ? "gun" : "sword";
-        keys['e'] = false;
-    }
-
-    // Especial
-    if (keys['g'] && special >= 100) {
-        special = 0;
-        enemies = [];
-        createParticles(400, 300, "#0f0");
-        stage++;
-        spawnWave();
-    }
-
-    // Balas
-    bullets.forEach((b, i) => {
-        b.x += b.vx; b.y += b.vy;
-        if (b.x < 0 || b.x > 800 || b.y < 0 || b.y > 600) bullets.splice(i, 1);
-        
-        enemies.forEach((en, ei) => {
-            if (Math.hypot(en.x - b.x, en.y - b.y) < en.size) {
-                en.hp--;
-                bullets.splice(i, 1);
-            }
-        });
+    // Layout do Mapa (Maior e mais complexo)
+    const map = addLevel([
+        "cttttttttttttttttttttd",
+        "l....................r",
+        "l....................r",
+        "l.....O..............r",
+        "l....................r",
+        "l...W................r",
+        "l....................r",
+        "l..........N.........r",
+        "l....................r",
+        "l...S................r",
+        "l....................r",
+        "attttttttttttttttttttb",
+    ], {
+        tileWidth: 16,
+        tileHeight: 16,
+        tiles: {
+            ".": () => [ sprite("floor", { frame: ~~rand(0, 8) }), layer("bg") ],
+            "w": () => [ sprite("wall"), area(), body({ isStatic: true }), layer("game") ],
+            "t": () => [ sprite("wall_top"), area({ shape: new Rect(vec2(0, 12), 16, 4) }), body({ isStatic: true }), layer("game") ],
+            "l": () => [ sprite("wall_left"), area({ shape: new Rect(vec2(0), 4, 16) }), body({ isStatic: true }), layer("game") ],
+            "r": () => [ sprite("wall_right"), area({ shape: new Rect(vec2(12, 0), 4, 16) }), body({ isStatic: true }), layer("game") ],
+            "c": () => [ sprite("wall_topleft"), area(), body({ isStatic: true }), layer("game") ],
+            "d": () => [ sprite("wall_topright"), area(), body({ isStatic: true }), layer("game") ],
+            "a": () => [ sprite("wall_botleft"), area(), body({ isStatic: true }), layer("game") ],
+            "b": () => [ sprite("wall_botright"), area(), body({ isStatic: true }), layer("game") ],
+            // NPCs Spawns (Marcadores invisíveis que spawnarão os sprites reais)
+            "O": () => [ "spawn_old_man" ], 
+            "W": () => [ "spawn_wizard" ],
+            "N": () => [ "spawn_ninja" ],
+            "S": () => [ "spawn_samurai" ],
+        },
     });
 
-    // Inimigos
-    enemies.forEach((en, i) => {
-        const angle = Math.atan2(player.y - en.y, player.x - en.x);
-        en.x += Math.cos(angle) * en.speed;
-        en.y += Math.sin(angle) * en.speed;
-
-        // Dano no player
-        if (Math.hypot(player.x - en.x, player.y - en.y) < 25) {
-            player.hp -= 0.2;
-            if (player.hp <= 0) location.reload(); // Game Over simples
-        }
-
-        if (en.hp <= 0) {
-            enemies.splice(i, 1);
-            score += 10;
-        }
-    });
-
-    // Partículas
-    particles.forEach((p, i) => {
-        p.x += p.vx; p.y += p.vy;
-        p.life -= 0.02;
-        if (p.life <= 0) particles.splice(i, 1);
-    });
-
-    if (enemies.length === 0) {
-        stage++;
-        spawnWave();
+    // Camadas para profundidade
+    // bg: chão, game: player/paredes, ui: textos
+    const layers = {
+        "bg": -1,
+        "game": 0,
+        "ui": 1,
     }
-}
-
-function draw() {
-    ctx.fillStyle = "#050505";
-    ctx.fillRect(0, 0, 800, 600);
-
-    // Partículas
-    particles.forEach(p => {
-        ctx.globalAlpha = p.life;
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, 3, 3);
-    });
-    ctx.globalAlpha = 1.0;
-
-    // Player
-    ctx.fillStyle = "#0f0";
-    ctx.fillRect(player.x - 15, player.y - 15, 30, 30);
     
-    // Feedback visual da espada
-    if (player.weapon === "sword") {
-        ctx.strokeStyle = "rgba(0, 255, 0, 0.2)";
-        ctx.beginPath();
-        ctx.arc(player.x, player.y, 100, 0, Math.PI * 2);
-        ctx.stroke();
+    function layer(l) {
+        return z(layers[l])
     }
 
-    // Inimigos
-    ctx.fillStyle = "#f00";
-    enemies.forEach(en => ctx.fillRect(en.x - 10, en.y - 10, 20, 20));
+    // --- JOGADOR ---
+    const player = add([
+        sprite("hero_spectral"),
+        pos(100, 100),
+        area({ shape: new Rect(vec2(10, 10), 20, 30) }), // Hitbox ajustada
+        body(),
+        anchor("center"),
+        scale(0.8), // Ajuste de tamanho dos GIFs
+        layer("game"),
+        {
+            speed: 140,
+            dir: vec2(0, 0),
+            weapon: "graveto", // Começa com arma inútil
+            canDash: true,
+        },
+        "player"
+    ]);
 
-    // Balas
-    ctx.fillStyle = "#ff0";
-    bullets.forEach(b => ctx.fillRect(b.x - 2, b.y - 2, 4, 4));
+    // Arma visual (anexada ao player)
+    const weaponSprite = player.add([
+        rect(4, 12),
+        pos(10, 5),
+        color(139, 69, 19), // Marrom (Graveto)
+        anchor("bot"),
+        rotate(90),
+        "weapon_visual"
+    ]);
 
-    // UI
-    ctx.fillStyle = "#0f0";
-    ctx.font = "16px Courier New";
-    ctx.fillText(`INTEGRIDADE: ${Math.ceil(player.hp)}%`, 20, 30);
-    ctx.fillText(`SCORE: ${score}`, 20, 50);
-    ctx.fillText(`FASE: ${stage}`, 20, 70);
-    ctx.fillText(`MODO: ${player.weapon.toUpperCase()}`, 20, 90);
+    // --- SISTEMA DE ARMAS E COMBATE ---
+    const weapons = {
+        "graveto": { damage: 1, range: 20, color: rgb(139, 69, 19), name: "Graveto Podre", speed: 0.1 },
+        "katana": { damage: 5, range: 40, color: rgb(200, 200, 255), name: "Katana Enferrujada", speed: 0.05 },
+        "spectral": { damage: 20, range: 80, color: rgb(0, 255, 255), name: "Lâmina da Alma", speed: 0.02 } // OP
+    };
 
-    // Barra de Especial
-    ctx.strokeStyle = "#0f0";
-    ctx.strokeRect(680, 20, 100, 15);
-    ctx.fillRect(680, 20, special, 15);
-    if (special >= 100) ctx.fillText("ESPECIAL PRONTO [G]", 630, 55);
-}
+    function attack() {
+        const w = weapons[player.weapon];
+        
+        // Animação da arma
+        const angle = player.flipX ? -130 : 130;
+        weaponSprite.angle = angle;
+        tween(angle, player.flipX ? 0 : 0, w.speed, (val) => weaponSprite.angle = val, easings.easeOutQuad);
 
-function gameLoop() {
-    if (gameRunning) {
-        update();
-        draw();
-        requestAnimationFrame(gameLoop);
+        // Hitbox do ataque
+        const attackPos = player.pos.add(vec2(player.flipX ? -20 : 20, 0));
+        
+        // Efeito visual (apenas se for a arma forte)
+        if(player.weapon === "spectral") {
+            add([
+                rect(w.range, 5),
+                pos(attackPos),
+                anchor("left"),
+                color(0, 255, 255),
+                lifespan(0.1),
+                rotate(player.flipX ? 180 : 0),
+                layer("game")
+            ])
+        }
+
+        // Checar colisão
+        const enemies = get("enemy");
+        enemies.forEach(e => {
+            if (e.pos.dist(player.pos) < w.range) {
+                e.hurt(w.damage);
+                addKaboom(e.pos); // Explosão ao acertar
+                shake(2);
+            }
+        });
+
+        // Som ou Texto de "Bonk" se for graveto
+        if (player.weapon === "graveto") {
+            add([
+                text("ploc", { size: 12 }),
+                pos(player.pos.sub(0, 20)),
+                lifespan(0.5),
+                move(UP, 50),
+                color(255, 255, 255),
+                layer("ui")
+            ]);
+        }
     }
-}
+
+    // --- MOVESET: DASH ---
+    onKeyPress("shift", () => {
+        if (player.canDash) {
+            player.canDash = false;
+            const dashSpeed = 600;
+            const currentMove = isKeyDown("left") ? LEFT : isKeyDown("right") ? RIGHT : isKeyDown("up") ? UP : isKeyDown("down") ? DOWN : RIGHT;
+            
+            // Efeito visual de rastro (Ghost effect)
+            const ghost = add([
+                sprite("hero_spectral"),
+                pos(player.pos),
+                opacity(0.5),
+                anchor("center"),
+                scale(0.8),
+                lifespan(0.2),
+                layer("game")
+            ]);
+            if(player.flipX) ghost.flipX = true;
+
+            tween(player.speed, dashSpeed, 0.1, (val) => {}, easings.easeOutQuad).then(() => {
+                 player.speed = 140; // Volta ao normal
+                 wait(1, () => player.canDash = true); // Cooldown
+            });
+            
+            player.move(currentMove.scale(50)); // Impulso instantâneo
+        }
+    });
+
+    onKeyPress("space", attack);
+
+    // --- CONTROLES ---
+    onKeyDown("left", () => {
+        player.move(-player.speed, 0);
+        player.flipX = true;
+        weaponSprite.pos = vec2(-10, 5);
+    });
+    onKeyDown("right", () => {
+        player.move(player.speed, 0);
+        player.flipX = false;
+        weaponSprite.pos = vec2(10, 5);
+    });
+    onKeyDown("up", () => player.move(0, -player.speed));
+    onKeyDown("down", () => player.move(0, player.speed));
+
+    // Câmera suave
+    player.onUpdate(() => {
+        camPos(player.pos);
+    });
+
+    // --- SPAWN DE NPCS ---
+    
+    // Mestre (Old Man) - Dá armas
+    for (const t of get("spawn_old_man")) {
+        const npc = add([
+            sprite("old_master"),
+            pos(t.pos.add(8, 8)),
+            area(),
+            body({ isStatic: true }),
+            anchor("center"),
+            layer("game"),
+            "npc",
+            { msg: "Pegue esta Lâmina. O graveto é patético." }
+        ]);
+        
+        // Texto flutuante
+        add([
+            text("Mestre", { size: 10 }),
+            pos(npc.pos.sub(0, 25)),
+            anchor("center"),
+            layer("ui")
+        ]);
+    }
+
+    // Ninja - Apenas decorativo ou dicas
+    for (const t of get("spawn_ninja")) {
+        add([
+            sprite("ninja_green"),
+            pos(t.pos.add(8, 8)),
+            area(),
+            body({ isStatic: true }),
+            anchor("center"),
+            layer("game"),
+            "npc",
+            { msg: "O Time Zueira observa..." }
+        ]);
+    }
+
+    // Wizard - Cura (Exemplo)
+    for (const t of get("spawn_wizard")) {
+        add([
+            sprite("wizard"),
+            pos(t.pos.add(8, 8)),
+            area(),
+            body({ isStatic: true }),
+            anchor("center"),
+            layer("game"),
+            "npc",
+            { msg: "A magia flui neste lugar." }
+        ]);
+    }
+
+    // Inimigo (Samurai Vermelho) - Teste de combate
+    for (const t of get("spawn_samurai")) {
+        add([
+            sprite("samurai_red"),
+            pos(t.pos.add(8, 8)),
+            area(),
+            body(),
+            anchor("center"),
+            health(10),
+            state("idle"),
+            layer("game"),
+            "enemy",
+            { speed: 50 }
+        ]);
+    }
+
+    // IA Simples do Inimigo
+    onUpdate("enemy", (e) => {
+        if(e.pos.dist(player.pos) < 100) {
+            e.move(player.pos.sub(e.pos).unit().scale(e.speed));
+            e.flipX = player.pos.x < e.pos.x;
+        }
+    });
+
+    // Interação com NPCs
+    onKeyPress("e", () => {
+        let interacted = false;
+        get("npc").forEach(npc => {
+            if (player.pos.dist(npc.pos) < 50) {
+                // Diálogo
+                add([
+                    text(npc.msg, { size: 12, width: 200 }),
+                    pos(npc.pos.sub(0, 40)),
+                    anchor("center"),
+                    lifespan(2),
+                    color(255, 255, 0),
+                    outline(2, black()),
+                    layer("ui")
+                ]);
+                interacted = true;
+
+                // Evento Específico do Mestre: Upgrade de Arma
+                if(npc.msg.includes("Lâmina")) {
+                    player.weapon = "spectral";
+                    weaponSprite.destroy(); // Remove o graveto visual
+                    // Adiciona brilho na mão
+                    player.add([
+                        circle(5),
+                        color(0, 255, 255),
+                        pos(10, 0),
+                        "weapon_glow"
+                    ]);
+                    shake(5);
+                }
+            }
+        });
+    });
+
+    // --- UI E HUD ---
+    
+    // Logo TZ no canto
+    add([
+        sprite("logo_tz"),
+        pos(20, 20),
+        scale(0.1), // Pequeno no HUD
+        fixed(),
+        layer("ui")
+    ]);
+
+    // Info da Arma
+    const weaponText = add([
+        text("Arma: Graveto", { size: 18, font: "monospace" }),
+        pos(60, 25),
+        fixed(),
+        color(255, 255, 255),
+        layer("ui")
+    ]);
+
+    // Atualizar UI
+    onUpdate(() => {
+        const w = weapons[player.weapon];
+        weaponText.text = `Arma: ${w.name}`;
+        weaponText.color = w.color;
+    });
+
+    // Iluminação Global (Fake shader)
+    add([
+        rect(width(), height()),
+        pos(0,0),
+        color(0,0,20),
+        opacity(0.3),
+        fixed(),
+        layer("ui"), // Fica por cima de tudo para escurecer
+        "darkness"
+    ]);
+
+    // Texto de ajuda
+    add([
+        text("[WASD] Mover | [ESPAÇO] Atacar | [SHIFT] Dash | [E] Falar", { size: 12 }),
+        pos(width()/2, height() - 30),
+        anchor("center"),
+        fixed(),
+        layer("ui")
+    ]);
+
+});
+
+// Iniciar Jogo
+go("game");
 </script>
 </body>
 </html>
