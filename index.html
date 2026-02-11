@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Time Zueira RPG</title>
+    <title>Time Zueira RPG - Fixed</title>
     <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; }
@@ -9,29 +9,24 @@
 </head>
 <body>
 <script>
-// 1. Inicialização com visual melhorado
+// 1. Inicialização
 kaboom({
     scale: 3,
-    background: [10, 10, 15], // Fundo azul escuro profundo
-    crisp: true, // Pixel art nítida
+    background: [10, 10, 15],
+    crisp: true,
 })
 
-// 2. Carregamento dos Assets (Sprites enviados)
-// Nota: Estou assumindo que os arquivos estão na raiz. Se não, ajuste o caminho.
-
-// Logos
+// 2. Carregamento dos Assets
 loadSprite("logo_vmz", "image_da3f41.png");
 loadSprite("logo_tz", "image_da46a4.png");
+loadSprite("hero_spectral", "_Hugkw.gif"); 
+loadSprite("samurai_hat", "40vMaR.gif");   
+loadSprite("ninja_green", "Ru5PS2.gif");   
+loadSprite("old_master", "XSuwrQ.gif");    
+loadSprite("wizard", "KFBLh9.gif");        
+loadSprite("samurai_red", "sRNxiP.gif");   
 
-// Personagens (GIFs)
-loadSprite("hero_spectral", "_Hugkw.gif"); // Heroi principal
-loadSprite("samurai_hat", "40vMaR.gif");   // NPC 1
-loadSprite("ninja_green", "Ru5PS2.gif");   // NPC 2
-loadSprite("old_master", "XSuwrQ.gif");    // Mestre (dá armas)
-loadSprite("wizard", "KFBLh9.gif");        // Mago
-loadSprite("samurai_red", "sRNxiP.gif");   // Inimigo comum
-
-// Tileset do cenário (Dungeon original para manter o chão)
+// Tileset do cenário
 loadSpriteAtlas("https://kaboomjs.com/sprites/dungeon.png", {
     "floor": { x: 16, y: 64, width: 48, height: 48, sliceX: 3, sliceY: 3 },
     "wall": { x: 16, y: 16, width: 16, height: 16 },
@@ -44,10 +39,22 @@ loadSpriteAtlas("https://kaboomjs.com/sprites/dungeon.png", {
     "wall_botright": { x: 48, y: 144, width: 16, height: 16 },
 });
 
-// 3. Definição da Cena Principal
+// 3. Definição da Cena
 scene("game", () => {
 
-    // Layout do Mapa (Maior e mais complexo)
+    // --- CORREÇÃO: DEFINIR AS LAYERS PRIMEIRO ---
+    const layersMap = {
+        "bg": -1,
+        "game": 0,
+        "ui": 1,
+    }
+    
+    function layer(l) {
+        return z(layersMap[l])
+    }
+    // ---------------------------------------------
+
+    // Agora podemos criar o Mapa
     const map = addLevel([
         "cttttttttttttttttttttd",
         "l....................r",
@@ -74,7 +81,6 @@ scene("game", () => {
             "d": () => [ sprite("wall_topright"), area(), body({ isStatic: true }), layer("game") ],
             "a": () => [ sprite("wall_botleft"), area(), body({ isStatic: true }), layer("game") ],
             "b": () => [ sprite("wall_botright"), area(), body({ isStatic: true }), layer("game") ],
-            // NPCs Spawns (Marcadores invisíveis que spawnarão os sprites reais)
             "O": () => [ "spawn_old_man" ], 
             "W": () => [ "spawn_wizard" ],
             "N": () => [ "spawn_ninja" ],
@@ -82,65 +88,47 @@ scene("game", () => {
         },
     });
 
-    // Camadas para profundidade
-    // bg: chão, game: player/paredes, ui: textos
-    const layers = {
-        "bg": -1,
-        "game": 0,
-        "ui": 1,
-    }
-    
-    function layer(l) {
-        return z(layers[l])
-    }
-
     // --- JOGADOR ---
     const player = add([
         sprite("hero_spectral"),
         pos(100, 100),
-        area({ shape: new Rect(vec2(10, 10), 20, 30) }), // Hitbox ajustada
+        area({ shape: new Rect(vec2(10, 10), 20, 30) }),
         body(),
         anchor("center"),
-        scale(0.8), // Ajuste de tamanho dos GIFs
+        scale(0.8),
         layer("game"),
         {
             speed: 140,
             dir: vec2(0, 0),
-            weapon: "graveto", // Começa com arma inútil
+            weapon: "graveto",
             canDash: true,
         },
         "player"
     ]);
 
-    // Arma visual (anexada ao player)
     const weaponSprite = player.add([
         rect(4, 12),
         pos(10, 5),
-        color(139, 69, 19), // Marrom (Graveto)
+        color(139, 69, 19),
         anchor("bot"),
         rotate(90),
         "weapon_visual"
     ]);
 
-    // --- SISTEMA DE ARMAS E COMBATE ---
+    // --- COMBATE ---
     const weapons = {
         "graveto": { damage: 1, range: 20, color: rgb(139, 69, 19), name: "Graveto Podre", speed: 0.1 },
-        "katana": { damage: 5, range: 40, color: rgb(200, 200, 255), name: "Katana Enferrujada", speed: 0.05 },
-        "spectral": { damage: 20, range: 80, color: rgb(0, 255, 255), name: "Lâmina da Alma", speed: 0.02 } // OP
+        "spectral": { damage: 20, range: 80, color: rgb(0, 255, 255), name: "Lâmina da Alma", speed: 0.02 }
     };
 
     function attack() {
         const w = weapons[player.weapon];
-        
-        // Animação da arma
         const angle = player.flipX ? -130 : 130;
         weaponSprite.angle = angle;
         tween(angle, player.flipX ? 0 : 0, w.speed, (val) => weaponSprite.angle = val, easings.easeOutQuad);
 
-        // Hitbox do ataque
         const attackPos = player.pos.add(vec2(player.flipX ? -20 : 20, 0));
         
-        // Efeito visual (apenas se for a arma forte)
         if(player.weapon === "spectral") {
             add([
                 rect(w.range, 5),
@@ -153,17 +141,15 @@ scene("game", () => {
             ])
         }
 
-        // Checar colisão
         const enemies = get("enemy");
         enemies.forEach(e => {
             if (e.pos.dist(player.pos) < w.range) {
                 e.hurt(w.damage);
-                addKaboom(e.pos); // Explosão ao acertar
+                addKaboom(e.pos);
                 shake(2);
             }
         });
 
-        // Som ou Texto de "Bonk" se for graveto
         if (player.weapon === "graveto") {
             add([
                 text("ploc", { size: 12 }),
@@ -176,14 +162,13 @@ scene("game", () => {
         }
     }
 
-    // --- MOVESET: DASH ---
+    // --- DASH ---
     onKeyPress("shift", () => {
         if (player.canDash) {
             player.canDash = false;
             const dashSpeed = 600;
             const currentMove = isKeyDown("left") ? LEFT : isKeyDown("right") ? RIGHT : isKeyDown("up") ? UP : isKeyDown("down") ? DOWN : RIGHT;
             
-            // Efeito visual de rastro (Ghost effect)
             const ghost = add([
                 sprite("hero_spectral"),
                 pos(player.pos),
@@ -196,11 +181,10 @@ scene("game", () => {
             if(player.flipX) ghost.flipX = true;
 
             tween(player.speed, dashSpeed, 0.1, (val) => {}, easings.easeOutQuad).then(() => {
-                 player.speed = 140; // Volta ao normal
-                 wait(1, () => player.canDash = true); // Cooldown
+                 player.speed = 140;
+                 wait(1, () => player.canDash = true);
             });
-            
-            player.move(currentMove.scale(50)); // Impulso instantâneo
+            player.move(currentMove.scale(50));
         }
     });
 
@@ -220,16 +204,13 @@ scene("game", () => {
     onKeyDown("up", () => player.move(0, -player.speed));
     onKeyDown("down", () => player.move(0, player.speed));
 
-    // Câmera suave
     player.onUpdate(() => {
         camPos(player.pos);
     });
 
-    // --- SPAWN DE NPCS ---
-    
-    // Mestre (Old Man) - Dá armas
+    // --- NPCS ---
     for (const t of get("spawn_old_man")) {
-        const npc = add([
+        add([
             sprite("old_master"),
             pos(t.pos.add(8, 8)),
             area(),
@@ -239,17 +220,9 @@ scene("game", () => {
             "npc",
             { msg: "Pegue esta Lâmina. O graveto é patético." }
         ]);
-        
-        // Texto flutuante
-        add([
-            text("Mestre", { size: 10 }),
-            pos(npc.pos.sub(0, 25)),
-            anchor("center"),
-            layer("ui")
-        ]);
+        add([ text("Mestre", { size: 10 }), pos(t.pos.sub(-8, 20)), anchor("center"), layer("ui") ]);
     }
 
-    // Ninja - Apenas decorativo ou dicas
     for (const t of get("spawn_ninja")) {
         add([
             sprite("ninja_green"),
@@ -263,7 +236,6 @@ scene("game", () => {
         ]);
     }
 
-    // Wizard - Cura (Exemplo)
     for (const t of get("spawn_wizard")) {
         add([
             sprite("wizard"),
@@ -277,7 +249,6 @@ scene("game", () => {
         ]);
     }
 
-    // Inimigo (Samurai Vermelho) - Teste de combate
     for (const t of get("spawn_samurai")) {
         add([
             sprite("samurai_red"),
@@ -293,7 +264,6 @@ scene("game", () => {
         ]);
     }
 
-    // IA Simples do Inimigo
     onUpdate("enemy", (e) => {
         if(e.pos.dist(player.pos) < 100) {
             e.move(player.pos.sub(e.pos).unit().scale(e.speed));
@@ -301,12 +271,9 @@ scene("game", () => {
         }
     });
 
-    // Interação com NPCs
     onKeyPress("e", () => {
-        let interacted = false;
         get("npc").forEach(npc => {
             if (player.pos.dist(npc.pos) < 50) {
-                // Diálogo
                 add([
                     text(npc.msg, { size: 12, width: 200 }),
                     pos(npc.pos.sub(0, 40)),
@@ -316,37 +283,20 @@ scene("game", () => {
                     outline(2, black()),
                     layer("ui")
                 ]);
-                interacted = true;
 
-                // Evento Específico do Mestre: Upgrade de Arma
                 if(npc.msg.includes("Lâmina")) {
                     player.weapon = "spectral";
-                    weaponSprite.destroy(); // Remove o graveto visual
-                    // Adiciona brilho na mão
-                    player.add([
-                        circle(5),
-                        color(0, 255, 255),
-                        pos(10, 0),
-                        "weapon_glow"
-                    ]);
+                    weaponSprite.destroy();
+                    player.add([ circle(5), color(0, 255, 255), pos(10, 0), "weapon_glow" ]);
                     shake(5);
                 }
             }
         });
     });
 
-    // --- UI E HUD ---
-    
-    // Logo TZ no canto
-    add([
-        sprite("logo_tz"),
-        pos(20, 20),
-        scale(0.1), // Pequeno no HUD
-        fixed(),
-        layer("ui")
-    ]);
+    // --- UI ---
+    add([ sprite("logo_tz"), pos(20, 20), scale(0.1), fixed(), layer("ui") ]);
 
-    // Info da Arma
     const weaponText = add([
         text("Arma: Graveto", { size: 18, font: "monospace" }),
         pos(60, 25),
@@ -355,25 +305,22 @@ scene("game", () => {
         layer("ui")
     ]);
 
-    // Atualizar UI
     onUpdate(() => {
         const w = weapons[player.weapon];
         weaponText.text = `Arma: ${w.name}`;
         weaponText.color = w.color;
     });
 
-    // Iluminação Global (Fake shader)
     add([
         rect(width(), height()),
         pos(0,0),
         color(0,0,20),
         opacity(0.3),
         fixed(),
-        layer("ui"), // Fica por cima de tudo para escurecer
+        layer("ui"),
         "darkness"
     ]);
 
-    // Texto de ajuda
     add([
         text("[WASD] Mover | [ESPAÇO] Atacar | [SHIFT] Dash | [E] Falar", { size: 12 }),
         pos(width()/2, height() - 30),
@@ -381,10 +328,8 @@ scene("game", () => {
         fixed(),
         layer("ui")
     ]);
-
 });
 
-// Iniciar Jogo
 go("game");
 </script>
 </body>
