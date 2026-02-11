@@ -1,453 +1,298 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-<meta charset="utf-8">
-<title>Skul Like Prototype</title>
+<meta charset="UTF-8">
+<title>Samurai Soul: Cyber Roguelike</title>
 <style>
-html,body { margin:0; background:#000; }
+    body { margin: 0; background: #050505; display: flex; justify-content: center; align-items: center; height: 100vh; color: #00ffcc; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
+    canvas { background: #0a0a0a; border: 2px solid #00ffcc; box-shadow: 0 0 20px rgba(0, 255, 204, 0.3); cursor: crosshair; }
+    #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    #menu, #creditos, #cartas, #game-over { position: absolute; background: rgba(0,0,0,0.9); border: 2px solid #00ffcc; padding: 30px; text-align: center; pointer-events: auto; z-index: 100; }
+    #cartas { display: none; gap: 20px; flex-direction: row; }
+    .cartao { width: 180px; border: 1px solid #00ffcc; padding: 20px; background: #111; cursor: pointer; transition: 0.3s; }
+    .cartao:hover { background: #00ffcc; color: #000; transform: translateY(-10px); box-shadow: 0 0 15px #00ffcc; }
+    button { padding: 15px 30px; font-size: 18px; cursor: pointer; margin: 10px; border: 1px solid #00ffcc; background: transparent; color: #00ffcc; text-transform: uppercase; transition: 0.3s; }
+    button:hover { background: #00ffcc; color: #000; }
+    .stat-bar { position: absolute; bottom: 20px; left: 20px; width: 250px; height: 15px; border: 1px solid #00ffcc; }
+    .bar-fill { height: 100%; width: 0%; background: #00ffcc; transition: 0.2s; }
 </style>
 </head>
 <body>
 
-<script src="https://unpkg.com/kaboom/dist/kaboom.js"></script>
+<canvas id="c" width="1000" height="700"></canvas>
+
+<div id="menu">
+    <h1 style="font-size: 40px; text-shadow: 0 0 10px #00ffcc;">SAMURAI SOUL</h1>
+    <p>Use WASD para mover | Mouse Esquerdo: Atacar | E: Trocar Arma | G: Especial</p>
+    <button onclick="startGame()">INICIAR PROTOCOLO</button><br>
+    <button onclick="showCredits()">CRÉDITOS</button>
+</div>
+
+<div id="creditos" style="display:none">
+    <h2>ARQUIVOS DO SISTEMA</h2>
+    <p>Desenvolvimento Original: Hanako & Barros</p>
+    <p>Refinamento: Gemini Core</p>
+    <button onclick="backMenu()">VOLTAR</button>
+</div>
+
+<div id="cartas"></div>
+
+<div id="game-over" style="display:none">
+    <h1 style="color: #ff3333;">CONEXÃO PERDIDA</h1>
+    <p id="final-score"></p>
+    <button onclick="location.reload()">RECONECTAR</button>
+</div>
+
 <script>
-kaboom({
-    width: 960,
-    height: 540,
-    scale: 1,
-    background: [20,20,25],
-})
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const W=1000, H=700, PLAYER_SIZE=35;
 
-/* --------------------------
-   PLAYER
----------------------------*/
+let player, enemies, playerBullets, enemyBullets, particles;
+let keys={}, mouse={x:0, y:0};
+let gameActive=false, showingCards=false;
+let stage=1, kills=0, xp=0, xpNextLevel=5;
+let specialBar=0;
+const maxSpecial=100;
 
-const player = add([
-    rect(24,32),
-    color(80,180,255),
-    pos(200,300),
-    area(),
-    body(),
-    anchor("center"),
-    {
-        hp: 100,
-    },
-    "player"
-])
-
-const SPEED = 220
-
-onKeyDown("a",()=>player.move(-SPEED,0))
-onKeyDown("d",()=>player.move(SPEED,0))
-onKeyDown("w",()=>player.move(0,-SPEED))
-onKeyDown("s",()=>player.move(0,SPEED))
-
-/* --------------------------
-   ESPADA (igual ao que tu descreveste)
----------------------------*/
-
-let cutting = false
-
-const sword = add([
-    rect(8,38),
-    color(255,255,255),
-    anchor("bot"),
-    pos(player.pos),
-    rotate(0),
-    area({ shape: new Rect(vec2(-4,-38),8,38) }),
-    {
-        active:false,
-    },
-    "sword"
-])
-
-onMouseDown(() => {
-    cutting = true
-    sword.active = true
-})
-
-onMouseRelease(() => {
-    cutting = false
-    sword.active = false
-})
-
-sword.onUpdate(() => {
-
-    if(!cutting) return
-
-    const dir = mousePos().sub(player.pos)
-
-    const ang = dir.angle()
-
-    sword.pos = player.pos.add(
-        dir.unit().scale(26)
-    )
-
-    sword.angle = ang
-})
-
-/* --------------------------
-   CORTE VISUAL
----------------------------*/
-
-function spawnSlash(pos, ang){
-
-    const s = add([
-        rect(40,8),
-        pos(pos),
-        anchor("center"),
-        rotate(ang),
-        color(255,120,120),
-        opacity(0.8),
-        lifespan(0.08),
-    ])
-}
-
-/* --------------------------
-   DAMAGE
----------------------------*/
-
-sword.onCollide("enemy", (e) => {
-    if(!sword.active) return
-    e.hurt(10)
-    spawnSlash(sword.pos, sword.angle)
-})
-
-sword.onCollide("boss", (b) => {
-    if(!sword.active) return
-    b.hurt(8)
-    spawnSlash(sword.pos, sword.angle)
-})
-
-/* --------------------------
-   ENEMY FACTORY (MOVESETS)
----------------------------*/
-
-function createEnemy(type, p){
-
-    const enemy = add([
-        rect(26,26),
-        pos(p),
-        anchor("center"),
-        area(),
-        body(),
-        color(255,120,80),
-        {
-            type,
-            hp: type=="brute"?50:30,
-            state:"idle",
-            timer:0,
-        },
-        "enemy"
-    ])
-
-    enemy.hurt = (d)=>{
-        enemy.hp -= d
-        if(enemy.hp<=0) destroy(enemy)
+// ---------------- CLASSES ----------------
+class Particle {
+    constructor(x,y,color) {
+        this.x=x; this.y=y; this.color=color;
+        this.v={x:(Math.random()-0.5)*5, y:(Math.random()-0.5)*5};
+        this.life=1.0;
     }
-
-    enemy.onUpdate(()=>enemyAI[enemy.type](enemy))
-
-    return enemy
+    draw() {
+        this.life -= 0.02;
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, 4, 4);
+        ctx.globalAlpha = 1;
+        this.x += this.v.x; this.y += this.v.y;
+    }
 }
 
-/* --------------------------
-   MOVESETS (Skul style)
----------------------------*/
+// ---------------- SETUP ----------------
+function startGame(){
+    document.getElementById("menu").style.display="none";
+    canvas.style.display="block";
+    resetRun();
+    gameActive=true;
+}
 
-const enemyAI = {
+function resetRun(){
+    player = {
+        x: W/2, y: H/2, speed: 5, 
+        hp: 100, maxHp: 100, 
+        weapon: "sword", // Começa com espada que é mais samurai
+        dashCooldown: 0
+    };
+    enemies=[]; playerBullets=[]; enemyBullets=[]; particles=[];
+    stage=1; kills=0; xp=0; specialBar=0;
+    spawnWave();
+}
 
-    assassin(e){
+// ---------------- INPUTS ----------------
+window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+window.addEventListener("mousemove", e => {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - r.left;
+    mouse.y = e.clientY - r.top;
+});
+canvas.addEventListener("mousedown", e => {
+    if(!gameActive) return;
+    if(player.weapon === "gun") shoot();
+    else swordAttack();
+});
 
-        e.timer -= dt()
+function shoot() {
+    playerBullets.push({
+        x: player.x+PLAYER_SIZE/2, y: player.y+PLAYER_SIZE/2,
+        vx: (mouse.x - (player.x+PLAYER_SIZE/2)) * 0.1,
+        vy: (mouse.y - (player.y+PLAYER_SIZE/2)) * 0.1,
+        life: 100
+    });
+}
 
-        if(e.state==="idle"){
-            if(e.pos.dist(player.pos) < 200){
-                e.state="windup"
-                e.timer=0.4
+function swordAttack() {
+    // Efeito visual de corte
+    for(let i=0; i<10; i++) particles.push(new Particle(mouse.x, mouse.y, "#00ffcc"));
+    
+    enemies.forEach((en, index) => {
+        let dist = Math.hypot(en.x - mouse.x, en.y - mouse.y);
+        if(dist < 80) {
+            damageEnemy(index, 2);
+            specialBar = Math.min(maxSpecial, specialBar + 5);
+        }
+    });
+}
+
+// ---------------- LOGICA ----------------
+function damageEnemy(index, dmg) {
+    let en = enemies[index];
+    en.hp -= dmg;
+    for(let i=0; i<3; i++) particles.push(new Particle(en.x, en.y, "#ff3333"));
+    if(en.hp <= 0) {
+        enemies.splice(index, 1);
+        kills++;
+        xp++;
+        if(xp >= xpNextLevel) levelUp();
+    }
+}
+
+function levelUp() {
+    gameActive = false;
+    xp = 0;
+    xpNextLevel += 5;
+    showShop();
+}
+
+function showShop() {
+    const div = document.getElementById("cartas");
+    div.style.display = "flex";
+    div.innerHTML = "";
+    const options = [
+        {t: "NANO-REPARO", d: "+20 HP", f: () => player.hp = Math.min(player.maxHp, player.hp + 20)},
+        {t: "SOBRECARGA", d: "+1 Velocidade", f: () => player.speed += 1},
+        {t: "LÂMINA LONGA", d: "Ataque em área maior", f: () => { /* lógica de range */ }}
+    ];
+    options.forEach(opt => {
+        let c = document.createElement("div");
+        c.className = "cartao";
+        c.innerHTML = `<h3>${opt.t}</h3><p>${opt.d}</p>`;
+        c.onclick = () => { opt.f(); div.style.display="none"; gameActive=true; checkWave(); };
+        div.appendChild(c);
+    });
+}
+
+function spawnWave() {
+    for(let i=0; i < 3 + stage; i++) {
+        enemies.push({
+            x: Math.random() > 0.5 ? 0 : W,
+            y: Math.random() * H,
+            hp: 3 + stage,
+            speed: 1.5 + (Math.random()),
+            w: 30, h: 30
+        });
+    }
+}
+
+function checkWave() {
+    if(enemies.length === 0) {
+        stage++;
+        spawnWave();
+    }
+}
+
+function update() {
+    if(!gameActive) return;
+
+    // Movimento
+    if(keys["w"]) player.y -= player.speed;
+    if(keys["s"]) player.y += player.speed;
+    if(keys["a"]) player.x -= player.speed;
+    if(keys["d"]) player.x += player.speed;
+
+    // Inimigos perseguem
+    enemies.forEach(en => {
+        let dx = (player.x + PLAYER_SIZE/2) - en.x;
+        let dy = (player.y + PLAYER_SIZE/2) - en.y;
+        let dist = Math.hypot(dx, dy);
+        en.x += (dx/dist) * en.speed;
+        en.y += (dy/dist) * en.speed;
+
+        if(dist < 30) {
+            player.hp -= 0.2;
+            if(player.hp <= 0) endGame();
+        }
+    });
+
+    // Balas
+    playerBullets.forEach((b, i) => {
+        b.x += b.vx; b.y += b.vy;
+        b.life--;
+        if(b.life <= 0) playerBullets.splice(i,1);
+        enemies.forEach((en, ei) => {
+            if(Math.hypot(en.x - b.x, en.y - b.y) < 20) {
+                damageEnemy(ei, 1);
+                playerBullets.splice(i,1);
             }
-        }
+        });
+    });
 
-        if(e.state==="windup"){
-            if(e.timer<=0){
-                e.state="dash"
-                e.vel = player.pos.sub(e.pos).unit().scale(520)
-            }
-        }
-
-        if(e.state==="dash"){
-            e.move(e.vel)
-            if(e.timer<=-0.2){
-                e.state="recover"
-                e.timer=0.4
-            }
-        }
-
-        if(e.state==="recover"){
-            if(e.timer<=0){
-                e.state="idle"
-            }
-        }
-
-    },
-
-    ranger(e){
-
-        e.timer -= dt()
-
-        if(e.state==="idle"){
-            if(e.timer<=0){
-                shootEnemyBullet(e)
-                e.timer=1.2
-            }
-        }
-
-    },
-
-    brute(e){
-
-        e.timer -= dt()
-
-        if(e.state==="idle"){
-            if(e.pos.dist(player.pos)<120){
-                e.state="slam"
-                e.timer=0.6
-            }
-        }
-
-        if(e.state==="slam"){
-            if(e.timer<=0){
-                spawnShockwave(e.pos)
-                e.state="idle"
-            }
-        }
-
-    }
-
-}
-
-/* --------------------------
-   BULLET
----------------------------*/
-
-function shootEnemyBullet(e){
-
-    const dir = player.pos.sub(e.pos).unit()
-
-    add([
-        rect(6,6),
-        pos(e.pos),
-        area(),
-        color(255,60,60),
-        move(dir,260),
-        offscreen({destroy:true}),
-        "enemyBullet"
-    ])
-}
-
-/* --------------------------
-   SHOCKWAVE
----------------------------*/
-
-function spawnShockwave(p){
-
-    const w = add([
-        circle(12),
-        pos(p),
-        area(),
-        color(255,200,80),
-        lifespan(0.3),
-        "enemyWave"
-    ])
-}
-
-/* --------------------------
-   BOSS (hitbox do corpo inteiro + fases)
----------------------------*/
-
-const boss = add([
-    rect(80,64),
-    pos(650,300),
-    anchor("center"),
-    area(),     // hitbox do corpo inteiro
-    body(),
-    color(200,60,255),
-    {
-        hp:300,
-        phase:1,
-        state:"idle",
-        timer:0,
-    },
-    "boss"
-])
-
-boss.hurt = (d)=>{
-    boss.hp -= d
-
-    if(boss.hp<=200) boss.phase=2
-    if(boss.hp<=100) boss.phase=3
-
-    if(boss.hp<=0){
-        destroy(boss)
+    if(keys["e"]) { player.weapon = player.weapon === "sword" ? "gun" : "sword"; keys["e"]=false; }
+    if(keys["g"] && specialBar >= maxSpecial) {
+        specialBar = 0;
+        enemies.forEach((e, i) => damageEnemy(i, 10));
     }
 }
 
-boss.onUpdate(()=>bossAI())
-
-function bossAI(){
-
-    boss.timer -= dt()
-
-    if(boss.phase===1){
-        simplePattern()
-    }
-
-    if(boss.phase===2){
-        dashPattern()
-    }
-
-    if(boss.phase===3){
-        hellPattern()
-    }
+function endGame() {
+    gameActive = false;
+    document.getElementById("game-over").style.display = "block";
+    document.getElementById("final-score").innerText = `Kills: ${kills} | Estágio: ${stage}`;
 }
 
-/* --------------------------
-   BOSS PATTERNS
----------------------------*/
+function draw() {
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(0,0,W,H);
 
-function simplePattern(){
+    // Partículas
+    particles.forEach((p, i) => {
+        p.draw();
+        if(p.life <= 0) particles.splice(i, 1);
+    });
 
-    if(boss.timer<=0){
-        shootBossRing(6,180)
-        boss.timer=2
-    }
+    // Player
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "#00ffcc";
+    ctx.fillStyle = "#00ffcc";
+    ctx.fillRect(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE);
+    
+    // Inimigos
+    ctx.shadowColor = "#ff3333";
+    ctx.fillStyle = "#ff3333";
+    enemies.forEach(en => ctx.fillRect(en.x, en.y, en.w, en.h));
+    
+    // Balas
+    ctx.shadowColor = "#00ffcc";
+    ctx.fillStyle = "#00ffcc";
+    playerBullets.forEach(b => ctx.fillRect(b.x, b.y, 6, 6));
 
+    // UI
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff";
+    ctx.font = "14px Courier New";
+    ctx.fillText(`HP: ${Math.ceil(player.hp)}`, 20, 30);
+    ctx.fillText(`KILLS: ${kills}`, 20, 50);
+    ctx.fillText(`STAGE: ${stage}`, 20, 70);
+    ctx.fillText(`ARMA: ${player.weapon.toUpperCase()}`, 20, 90);
+    
+    // XP Bar
+    ctx.strokeStyle = "#00ffcc";
+    ctx.strokeRect(W/2 - 100, 20, 200, 10);
+    ctx.fillStyle = "#00ffcc";
+    ctx.fillRect(W/2 - 100, 20, (xp/xpNextLevel)*200, 10);
+
+    // Special Bar
+    ctx.strokeStyle = "#ff0";
+    ctx.strokeRect(W - 120, H - 30, 100, 10);
+    ctx.fillStyle = "#ff0";
+    ctx.fillRect(W - 120, H - 30, (specialBar/maxSpecial)*100, 10);
+    if(specialBar >= maxSpecial) ctx.fillText("ESPECIAL PRONTO [G]", W - 150, H - 40);
 }
 
-function dashPattern(){
-
-    if(boss.state==="idle"){
-        boss.state="dash"
-        boss.vel = player.pos.sub(boss.pos).unit().scale(500)
-        boss.timer=0.4
-    }
-
-    if(boss.state==="dash"){
-        boss.move(boss.vel)
-        if(boss.timer<=0){
-            boss.state="idle"
-            boss.timer=1.2
-        }
-    }
-
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
 }
+loop();
 
-function hellPattern(){
-
-    if(boss.timer<=0){
-        shootBossRing(14,260)
-        boss.timer=1
-    }
-
-}
-
-/* --------------------------
-   BOSS BULLETS
----------------------------*/
-
-function shootBossRing(n,speed){
-
-    for(let i=0;i<n;i++){
-
-        const a = i*(Math.PI*2/n)
-        const dir = vec2(Math.cos(a),Math.sin(a))
-
-        add([
-            rect(6,6),
-            pos(boss.pos),
-            area(),
-            color(255,0,200),
-            move(dir,speed),
-            offscreen({destroy:true}),
-            "enemyBullet"
-        ])
-    }
-}
-
-/* --------------------------
-   NPC ALIADO QUE ATIRA
----------------------------*/
-
-const ally = add([
-    rect(20,20),
-    pos(150,380),
-    anchor("center"),
-    area(),
-    color(80,255,120),
-    {
-        timer:0,
-    },
-    "ally"
-])
-
-ally.onUpdate(()=>{
-
-    ally.timer-=dt()
-
-    if(ally.timer<=0){
-        shootAlly()
-        ally.timer=0.6
-    }
-
-})
-
-function shootAlly(){
-
-    const target = get("enemy")[0] || boss
-    if(!target) return
-
-    const dir = target.pos.sub(ally.pos).unit()
-
-    add([
-        rect(6,4),
-        pos(ally.pos),
-        area(),
-        color(120,255,120),
-        move(dir,420),
-        offscreen({destroy:true}),
-        "allyBullet"
-    ])
-}
-
-/* --------------------------
-   COLLISIONS
----------------------------*/
-
-onCollide("allyBullet","enemy",(b,e)=>{
-    e.hurt(8)
-    destroy(b)
-})
-
-onCollide("allyBullet","boss",(b,bo)=>{
-    bo.hurt(6)
-    destroy(b)
-})
-
-/* --------------------------
-   SPAWN
----------------------------*/
-
-createEnemy("assassin",vec2(400,280))
-createEnemy("ranger",vec2(500,200))
-createEnemy("brute",vec2(450,360))
-
-/* --------------------------
-   CAMERA
----------------------------*/
-
-player.onUpdate(()=>{
-    camPos(player.pos)
-})
+// Funções de Menu
+function showCredits(){ document.getElementById("menu").style.display="none"; document.getElementById("creditos").style.display="block"; }
+function backMenu(){ document.getElementById("creditos").style.display="none"; document.getElementById("menu").style.display="block"; }
 
 </script>
 </body>
