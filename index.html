@@ -1,166 +1,198 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
-    <title>Time Zueira RPG - Anti-Blackscreen</title>
-    <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
+    <meta charset="UTF-8">
+    <title>Time Zueira - Native Engine</title>
+    <style>
+        body { margin: 0; background: #050510; color: #0f0; font-family: 'Courier New', monospace; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        canvas { border: 2px solid #333; box-shadow: 0 0 20px rgba(0,255,255,0.2); background: #000; }
+        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; }
+    </style>
 </head>
-<body style="margin:0; background:#000;">
+<body>
+
+<div id="ui">
+    <div id="weaponDisp">ARMA: GRAVETO PODRE</div>
+    <div id="hpDisp">BOSS HP: 100</div>
+    <div style="font-size: 12px; margin-top: 10px;">[WASD] Mover | [SHIFT] Dash | [ESPAÇO] Ataque | [E] Interagir</div>
+</div>
+
+<canvas id="g"></canvas>
+
 <script>
-// 1. Inicialização Forçada
-const k = kaboom({
-    background: [20, 20, 30],
-    scale: 1.5,
-})
+const cvs = document.getElementById("g");
+const ctx = cvs.getContext("2d");
+cvs.width = 800; cvs.height = 600;
 
-// 2. Carregamento de Sprites (Tente carregar, mas não trave o jogo)
-loadSprite("hero", "_Hugkw.gif")
-loadSprite("mestre", "XSuwrQ.gif")
-loadSprite("ninja", "Ru5PS2.gif")
-loadSprite("mago", "KFBLh9.gif")
-loadSprite("inimigo", "sRNxiP.gif")
-loadSprite("logo", "image_da46a4.png")
+// --- CARREGAMENTO DE IMAGENS ---
+function loadImg(src) {
+    const img = new Image();
+    img.src = src;
+    return img;
+}
 
-scene("game", () => {
-    // Sistema de Dano e Armas
-    let armaNivel = 0 // 0 = Inútil, 1 = Lâmina VMZ
+const sprites = {
+    hero: loadImg("_Hugkw.gif"),
+    master: loadImg("XSuwrQ.gif"),
+    ninja: loadImg("Ru5PS2.gif"),
+    wizard: loadImg("KFBLh9.gif"),
+    enemy: loadImg("sRNxiP.gif"),
+    logo: loadImg("image_da46a4.png")
+};
 
-    // Jogador
-    const player = add([
-        sprite("hero"), 
-        pos(100, 100),
-        area(),
-        body(),
-        anchor("center"),
-        {
-            speed: 200,
-            isDashing: false,
-        }
-    ])
+// --- ESTADO DO JOGO ---
+const player = {
+    x: 100, y: 300, w: 40, h: 40,
+    speed: 4, dashing: 0, 
+    weapon: 0, // 0: Graveto, 1: Lâmina VMZ
+    flip: false
+};
 
-    // Espada Visual (seguindo o player)
-    const sword = add([
-        rect(5, 30),
-        anchor("bot"),
-        pos(player.pos),
-        color(150, 150, 150),
-        opacity(0), // Começa escondida
-    ])
+const boss = { x: 600, y: 300, w: 60, h: 60, hp: 100, active: true };
 
-    // NPCs e Boss
-    const mestre = add([
-        sprite("mestre"),
-        pos(300, 150),
-        area(),
-        anchor("center"),
-        "npc"
-    ])
+const npcs = [
+    { x: 300, y: 150, sprite: 'master', msg: "Pegue a Lâmina VMZ com [E]!", id: 'mestre' },
+    { x: 200, y: 450, sprite: 'ninja', msg: "O Time Zueira não perdoa...", id: 'ninja' },
+    { x: 500, y: 100, sprite: 'wizard', msg: "Cuidado com o Samurai Vermelho!", id: 'mago' }
+];
 
-    const boss = add([
-        sprite("inimigo"),
-        pos(500, 350),
-        area(),
-        health(100),
-        anchor("center"),
-        "enemy"
-    ])
+const keys = {};
+window.onkeydown = e => keys[e.key.toLowerCase()] = true;
+window.onkeyup = e => keys[e.key.toLowerCase()] = false;
 
-    // --- MOVESET (DASH E ATAQUE) ---
+let particles = [];
+let msgActive = "";
 
-    // ATAQUE (ESPAÇO)
-    onKeyPress("space", () => {
-        sword.opacity = 1
-        sword.pos = player.pos.add(player.flipX ? -15 : 15, 0)
-        
-        // Animação de corte
-        tween(0, 120, 0.1, (v) => sword.angle = player.flipX ? -v : v, easings.easeOutQuad)
-        
-        wait(0.15, () => {
-            sword.opacity = 0
-            sword.angle = 0
-        })
+// --- LÓGICA ---
+function update() {
+    // Movimentação & Dash
+    let curSpeed = player.speed;
+    if (keys['shift'] && player.dashing <= 0) player.dashing = 20;
+    if (player.dashing > 0) {
+        curSpeed = 15;
+        player.dashing--;
+        // Efeito de rastro
+        particles.push({x: player.x, y: player.y, l: 10, c: 'rgba(0,255,255,0.3)'});
+    }
 
-        // Lógica de Dano
-        if (armaNivel === 1) {
-            if (player.pos.dist(boss.pos) < 70) {
-                boss.hurt(20)
-                shake(10)
-                addKaboom(boss.pos)
+    if (keys['w']) player.y -= curSpeed;
+    if (keys['s']) player.y += curSpeed;
+    if (keys['a']) { player.x -= curSpeed; player.flip = true; }
+    if (keys['d']) { player.x += curSpeed; player.flip = false; }
+
+    // Ataque (Espaço)
+    if (keys[' ']) {
+        keys[' '] = false; // Previne spam
+        performAttack();
+    }
+
+    // Interação (E)
+    msgActive = "";
+    npcs.forEach(n => {
+        let d = Math.hypot(player.x - n.x, player.y - n.y);
+        if (d < 60) {
+            msgActive = n.msg;
+            if (keys['e'] && n.id === 'mestre') {
+                player.weapon = 1;
+                document.getElementById("weaponDisp").innerText = "ARMA: LÂMINA VMZ (ESPECTRAL)";
+                document.getElementById("weaponDisp").style.color = "#0ff";
             }
-        } else {
-            // Se a arma for inútil (Nível 0)
-            add([
-                text("DANO ZERO", { size: 10 }),
-                pos(player.pos.add(0, -40)),
-                lifespan(0.3),
-                move(UP, 100)
-            ])
         }
-    })
+    });
 
-    // DASH (SHIFT)
-    onKeyPress("shift", () => {
-        if (player.isDashing) return
-        player.isDashing = true
-        player.speed = 800
-        
-        // Efeito visual de rastro (Ghost)
-        const ghost = add([
-            sprite("hero"),
-            pos(player.pos),
-            opacity(0.4),
-            lifespan(0.1)
-        ])
-
-        wait(0.1, () => {
-            player.speed = 200
-            player.isDashing = false
-        })
-    })
-
-    // --- INTERAÇÃO (E) ---
-    onKeyPress("e", () => {
-        if (player.pos.dist(mestre.pos) < 60) {
-            armaNivel = 1
-            sword.color = rgb(0, 255, 255) // A espada fica azul neon
-            add([
-                text("LÂMINA VMZ OBTIDA!", { size: 20 }),
-                pos(center()),
-                anchor("center"),
-                lifespan(2),
-                fixed()
-            ])
+    // Boss AI (Segue o player de longe)
+    if (boss.active) {
+        let dx = player.x - boss.x;
+        let dy = player.y - boss.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < 250 && dist > 40) {
+            boss.x += dx/dist * 2;
+            boss.y += dy/dist * 2;
         }
-    })
+    }
 
-    // --- MOVIMENTAÇÃO ---
-    onKeyDown("a", () => { player.move(-player.speed, 0); player.flipX = true })
-    onKeyDown("d", () => { player.move(player.speed, 0); player.flipX = false })
-    onKeyDown("w", () => player.move(0, -player.speed))
-    onKeyDown("s", () => player.move(0, player.speed))
+    particles.forEach((p, i) => { p.l--; if(p.l<=0) particles.splice(i,1); });
+}
 
-    // Câmera e Update
-    player.onUpdate(() => {
-        camPos(player.pos)
-        sword.pos = player.pos.add(player.flipX ? -10 : 10, 5)
-    })
+function performAttack() {
+    let range = player.weapon === 1 ? 80 : 30;
+    let damage = player.weapon === 1 ? 15 : 0;
+    
+    // Animação de corte (partículas)
+    for(let i=0; i<10; i++) {
+        particles.push({
+            x: player.x + (player.flip ? -range : range),
+            y: player.y + (Math.random()*40-20),
+            l: 15,
+            c: player.weapon === 1 ? '#0ff' : '#640'
+        });
+    }
 
-    boss.onDeath(() => {
-        destroy(boss)
-        add([
-            sprite("logo"),
-            pos(player.pos),
-            anchor("center")
-        ])
-        add([
-            text("BOSS ELIMINADO", { size: 30 }),
-            pos(player.pos.add(0, 100)),
-            anchor("center")
-        ])
-    })
-})
+    if (boss.active && Math.hypot(player.x - boss.x, player.y - boss.y) < range + 20) {
+        boss.hp -= damage;
+        document.getElementById("hpDisp").innerText = "BOSS HP: " + Math.max(0, boss.hp);
+        if (boss.hp <= 0) boss.active = false;
+    }
+}
 
-// Inicia o jogo imediatamente, sem esperar carregamento infinito
-go("game")
+// --- RENDERIZAÇÃO ---
+function draw() {
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+
+    // NPCs
+    npcs.forEach(n => {
+        ctx.drawImage(sprites[n.sprite], n.x - 20, n.y - 20, 40, 40);
+        ctx.fillStyle = "white";
+        ctx.font = "10px Arial";
+        ctx.fillText(n.id.toUpperCase(), n.x - 15, n.y - 30);
+    });
+
+    // Partículas (Rastro/Ataque)
+    particles.forEach(p => {
+        ctx.fillStyle = p.c;
+        ctx.fillRect(p.x, p.y, 4, 4);
+    });
+
+    // Boss
+    if (boss.active) {
+        ctx.drawImage(sprites.enemy, boss.x - 30, boss.y - 30, 60, 60);
+        ctx.fillStyle = "red";
+        ctx.fillRect(boss.x - 30, boss.y - 45, (boss.hp/100)*60, 5);
+    } else {
+        ctx.drawImage(sprites.logo, 400 - 100, 300 - 100, 200, 200);
+        ctx.fillStyle = "#0ff";
+        ctx.font = "20px Courier New";
+        ctx.fillText("TIME ZUEIRA VENCEU", 300, 550);
+    }
+
+    // Player
+    ctx.save();
+    if (player.flip) {
+        ctx.translate(player.x, player.y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(sprites.hero, -20, -20, 40, 40);
+    } else {
+        ctx.drawImage(sprites.hero, player.x - 20, player.y - 20, 40, 40);
+    }
+    ctx.restore();
+
+    // Balão de fala
+    if (msgActive) {
+        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.fillRect(player.x - 50, player.y - 70, 150, 25);
+        ctx.fillStyle = "#fff";
+        ctx.font = "12px Arial";
+        ctx.fillText(msgActive, player.x - 45, player.y - 53);
+    }
+
+    requestAnimationFrame(() => {
+        update();
+        draw();
+    });
+}
+
+// Início imediato
+draw();
 </script>
 </body>
 </html>
