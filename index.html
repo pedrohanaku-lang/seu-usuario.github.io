@@ -1,135 +1,176 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>TZ RPG - Estável</title>
+    <title>Time Zueira - Final</title>
     <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
 </head>
-<body style="margin:0; background:#000;">
+<body style="margin:0; overflow:hidden;">
 <script>
-// 1. Inicialização
+// 1. Inicialização robusta
 kaboom({
-    background: [5, 5, 10],
-    scale: 2,
-    debug: true // Ativa modo de erro na tela para sabermos o que houve
+    background: [10, 10, 15],
+    scale: 1.5,
 })
 
-// 2. Carregamento com tratamento de erro
+// 2. Carregamento com nomes simples
 loadSprite("hero", "_Hugkw.gif")
 loadSprite("mestre", "XSuwrQ.gif")
 loadSprite("ninja", "Ru5PS2.gif")
+loadSprite("mago", "KFBLh9.gif")
 loadSprite("inimigo", "sRNxiP.gif")
 loadSprite("logo", "image_da46a4.png")
 
-// Essa função "wait" garante que o motor gráfico processe as imagens
-wait(0.1, () => {
+// 3. Cena Principal
+scene("game", () => {
+    
+    // Jogador com atributos de moveset
+    const player = add([
+        sprite("hero"),
+        pos(center()),
+        area(),
+        body(),
+        anchor("center"),
+        {
+            speed: 180,
+            dashing: false,
+            temArma: false, // Começa inútil
+        }
+    ])
 
-    scene("main", () => {
-        // Criar o Player apenas se o sprite existir
-        const player = add([
-            sprite("hero"),
-            pos(80, 80),
-            area(),
-            body(),
-            anchor("center"),
-            { 
-                armaForte: false,
-                speed: 150 
-            }
-        ])
+    // A Espada (começa invisível/inútil)
+    const espada = player.add([
+        rect(4, 30),
+        color(150, 150, 150),
+        anchor("bot"),
+        pos(15, 10),
+        rotate(0),
+        opacity(0), // Invisível no início
+        "espada_visual"
+    ])
 
-        // NPCs
-        const mestre = add([
-            sprite("mestre"),
-            pos(250, 100),
-            area(),
-            anchor("center"),
-            "npc"
-        ])
+    // --- NPCs e Inimigo ---
+    const npcMestre = add([
+        sprite("mestre"),
+        pos(200, 200),
+        area(),
+        anchor("center"),
+        "npc"
+    ])
 
-        const boss = add([
-            sprite("inimigo"),
-            pos(300, 250),
-            area(),
-            health(30),
-            anchor("center"),
-            "enemy"
-        ])
+    add([
+        sprite("mago"),
+        pos(500, 150),
+        area(),
+        anchor("center")
+    ])
 
-        // --- SISTEMA DE COMBATE (MOVESET) ---
-        onKeyPress("space", () => {
-            // Efeito visual do ataque
-            const atq = add([
-                rect(player.armaForte ? 60 : 20, 2),
-                pos(player.pos.add(player.flipX ? -30 : 30, 0)),
-                anchor("center"),
-                color(player.armaForte ? rgb(0, 255, 255) : rgb(150, 150, 150)),
-                lifespan(0.1),
+    const boss = add([
+        sprite("inimigo"),
+        pos(600, 400),
+        area(),
+        health(100),
+        anchor("center"),
+        "enemy"
+    ])
+
+    // --- MOVESET: ATAQUE E DASH ---
+
+    // Ataque (Espaço)
+    onKeyPress("space", () => {
+        if (!player.temArma) {
+            // Arma inútil: apenas um texto
+            add([
+                text("ARMA INÚTIL", { size: 10 }),
+                pos(player.pos.add(0, -30)),
+                lifespan(0.5),
+                move(UP, 100)
             ])
+            return
+        }
 
-            // Lógica de Dano
-            if (player.armaForte) {
-                if (player.pos.dist(boss.pos) < 70) {
-                    boss.hurt(10)
-                    shake(10)
-                    add([
-                        text("HIT!", {size: 10}),
-                        pos(boss.pos),
-                        lifespan(0.3),
-                        move(UP, 100)
-                    ])
-                }
-            } else {
-                // Se estiver com graveto, não dá dano
-                shake(1)
-            }
-        })
+        // Ataque com a Lâmina
+        espada.opacity = 1
+        tween(0, 120, 0.1, (v) => espada.angle = player.flipX ? -v : v, easings.easeOutQuad)
+        
+        // Dano no inimigo
+        if (player.pos.dist(boss.pos) < 80) {
+            boss.hurt(20)
+            shake(5)
+            addKaboom(boss.pos)
+        }
 
-        // --- INTERAÇÃO ---
-        onKeyPress("e", () => {
-            if (player.pos.dist(mestre.pos) < 50) {
-                player.armaForte = true
-                add([
-                    text("LÂMINA VMZ EQUIPADA!", { size: 12 }),
-                    pos(center()),
-                    anchor("center"),
-                    lifespan(2),
-                    fixed()
-                ])
-            }
-        })
-
-        // --- CONTROLES ---
-        onKeyDown("left", () => { player.move(-player.speed, 0); player.flipX = true })
-        onKeyDown("right", () => { player.move(player.speed, 0); player.flipX = false })
-        onKeyDown("up", () => player.move(0, -player.speed))
-        onKeyDown("down", () => player.move(0, player.speed))
-
-        // Câmera
-        player.onUpdate(() => {
-            camPos(player.pos)
-            if (boss.hp() <= 0) {
-                destroy(boss)
-                go("win")
-            }
+        wait(0.2, () => {
+            espada.angle = 0
+            espada.opacity = 0
         })
     })
 
-    scene("win", () => {
-        add([
-            sprite("logo"),
-            pos(center()),
-            anchor("center"),
-            scale(0.5)
+    // Dash (Shift)
+    onKeyPress("shift", () => {
+        if (player.dashing) return
+        player.dashing = true
+        player.speed = 600
+        
+        // Efeito visual de rastro
+        const rastro = add([
+            sprite("hero"),
+            pos(player.pos),
+            opacity(0.5),
+            lifespan(0.1)
         ])
-        add([
-            text("BOSS DERROTADO - TIME ZUEIRA", { size: 14 }),
-            pos(center().add(0, 100)),
-            anchor("center")
-        ])
+        
+        wait(0.1, () => {
+            player.speed = 180
+            player.dashing = false
+        })
     })
 
-    go("main")
+    // --- INTERAÇÃO (E) ---
+    onKeyPress("e", () => {
+        if (player.pos.dist(npcMestre.pos) < 60) {
+            player.temArma = true
+            espada.color = rgb(0, 255, 255) // Fica Neon
+            add([
+                text("VOCÊ PEGOU A LÂMINA REAL!", { size: 20 }),
+                pos(center()),
+                anchor("center"),
+                lifespan(2),
+                fixed()
+            ])
+        }
+    })
+
+    // --- CONTROLES E CÂMERA ---
+    onKeyDown("left", () => { player.move(-player.speed, 0); player.flipX = true })
+    onKeyDown("right", () => { player.move(player.speed, 0); player.flipX = false })
+    onKeyDown("up", () => player.move(0, -player.speed))
+    onKeyDown("down", () => player.move(0, player.speed))
+
+    player.onUpdate(() => {
+        camPos(player.pos)
+    })
+
+    boss.onDeath(() => {
+        destroy(boss)
+        go("win")
+    })
+
+    // HUD
+    add([
+        text("SHIFT: Dash | ESPAÇO: Atacar | E: Falar com Mestre", { size: 12 }),
+        pos(20, 20),
+        fixed()
+    ])
 })
+
+scene("win", () => {
+    add([ sprite("logo"), pos(center()), anchor("center") ])
+    add([ text("VITÓRIA DO TIME ZUEIRA", { size: 30 }), pos(center().add(0, 150)), anchor("center") ])
+})
+
+// Forçar início imediato
+go("game")
+
 </script>
 </body>
 </html>
